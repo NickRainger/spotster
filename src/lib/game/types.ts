@@ -107,6 +107,14 @@ export interface SpotifyRoomInfo {
 	source: 'mock' | 'spotify';
 }
 
+/** Pass-the-phone gate (single-device). UI dims until handoff_ack. */
+export interface HandoffState {
+	kind: 'guesser' | 'challenger' | 'reveal';
+	playerId: string | null;
+	playerName: string;
+	message: string;
+}
+
 export interface RoomPublic {
 	code: string;
 	phase: GamePhase;
@@ -116,10 +124,13 @@ export interface RoomPublic {
 	turn: TurnState;
 	winnerId: string | null;
 	deckRemaining: number;
-	/** Single-device stub flag — HIT-5 */
 	playMode: 'multi' | 'single';
 	createdAt: number;
 	spotify: SpotifyRoomInfo;
+	/** Single-device: whose challenge seat (null = multi / done / N/A) */
+	challengeSeatId: string | null;
+	/** Single-device: pass-phone overlay */
+	handoff: HandoffState | null;
 }
 
 export type ClientMessage =
@@ -131,16 +142,20 @@ export type ClientMessage =
 	| { type: 'kick'; playerId: string }
 	| { type: 'leave' }
 	| { type: 'start' }
-	| { type: 'lock_slot'; slotIndex: number }
-	| { type: 'challenge'; slotIndex: number }
-	| { type: 'skip_turn' }
-	| { type: 'three_for_one' }
+	| { type: 'lock_slot'; slotIndex: number; asPlayerId?: string }
+	| { type: 'challenge'; slotIndex: number; asPlayerId?: string }
+	| { type: 'skip_turn'; asPlayerId?: string }
+	| { type: 'skip_challenge'; asPlayerId?: string }
+	| { type: 'three_for_one'; asPlayerId?: string }
 	| { type: 'host_reveal' }
 	| { type: 'host_skip_turn' }
 	| { type: 'host_force_phase'; phase: GamePhase }
 	| { type: 'token_earn_approve'; playerId: string }
 	| { type: 'request_token' }
 	| { type: 'set_play_mode'; mode: 'multi' | 'single' }
+	| { type: 'add_local_player'; name: string }
+	| { type: 'remove_local_player'; playerId: string }
+	| { type: 'handoff_ack' }
 	| {
 			type: 'set_deck';
 			tracks: Track[];

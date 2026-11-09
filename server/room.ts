@@ -13,6 +13,7 @@ import type {
 	ClientMessage,
 	GamePhase,
 	GameSettings,
+	HandoffState,
 	Player,
 	RoomPublic,
 	ServerMessage,
@@ -51,6 +52,11 @@ export class Room {
 		playlistId: null as string | null,
 		source: 'mock' as 'mock' | 'spotify'
 	};
+	handoff: HandoffState | null = null;
+	challengeSeatId: string | null = null;
+	private challengeQueue: string[] = [];
+	/** Device owner connection playerId (host) — acts for local seats in single mode */
+	private deviceOwnerId: string | null = null;
 	private conns = new Set<Conn>();
 	private timers = new Map<string, ReturnType<typeof setTimeout>>();
 	private turnIndexSeed = 0;
@@ -128,7 +134,9 @@ export class Room {
 			deckRemaining: this.deck.length,
 			playMode: this.playMode,
 			createdAt: this.createdAt,
-			spotify: { ...this.spotify }
+			spotify: { ...this.spotify },
+			challengeSeatId: this.challengeSeatId,
+			handoff: this.handoff ? { ...this.handoff } : null
 		};
 	}
 
@@ -160,16 +168,28 @@ export class Room {
 					this.start(conn);
 					break;
 				case 'lock_slot':
-					this.lockSlot(conn, msg.slotIndex);
+					this.lockSlot(conn, msg.slotIndex, msg.asPlayerId);
 					break;
 				case 'challenge':
-					this.challenge(conn, msg.slotIndex);
+					this.challenge(conn, msg.slotIndex, msg.asPlayerId);
 					break;
 				case 'skip_turn':
-					this.skipTurn(conn);
+					this.skipTurn(conn, msg.asPlayerId);
+					break;
+				case 'skip_challenge':
+					this.skipChallenge(conn, msg.asPlayerId);
 					break;
 				case 'three_for_one':
-					this.threeForOne(conn);
+					this.threeForOne(conn, msg.asPlayerId);
+					break;
+				case 'add_local_player':
+					this.addLocalPlayer(conn, msg.name);
+					break;
+				case 'remove_local_player':
+					this.removeLocalPlayer(conn, msg.playerId);
+					break;
+				case 'handoff_ack':
+					this.handoffAck(conn);
 					break;
 				case 'host_reveal':
 					this.hostReveal(conn);
@@ -219,6 +239,19 @@ export class Room {
 		return p;
 	}
 
+	/** In single-device, the device owner may act as any local seat via asPlayerId. */
+	private requireActor(conn: Conn, asPlayerId?: string): Player {
+		const controller = this.requirePlayer(conn);
+		if (!asPlayerId || asPlayerId === controller.id) return controller;
+		if (this.playMode !== 'single') throw new Error('asPlayerId alleen in single-device');
+		if (controller.id !== this.deviceOwnerId && !controller.isHost) {
+			throw new Error('Alleen het speeltoestel mag seats wisselen');
+		}
+		const target = this.players.find((p) => p.id === asPlayerId);
+		if (!target) throw new Error('Speler niet gevonden');
+		return target;
+	}
+
 	private createHost(conn: Conn, name: string, settings?: Partial<GameSettings>) {
 		if (this.players.length) throw new Error('Room bestaat al');
 		if (settings?.rulesVariant) {
@@ -230,6 +263,7 @@ export class Room {
 		this.players.push(host);
 		this.turnOrder = [host.id];
 		conn.playerId = host.id;
+		this.deviceOwnerId = host.id;
 		this.broadcast();
 	}
 
@@ -264,6 +298,7 @@ export class Room {
 		if (!existing) throw new Error('Sessie verlopen — join opnieuw');
 		existing.connected = true;
 		conn.playerId = existing.id;
+		if (existing.isHost) this.deviceOwnerId = existing.id;
 		this.broadcast();
 	}
 
@@ -374,7 +409,50 @@ export class Room {
 		this.requireHost(conn);
 		if (this.phase !== 'lobby') throw new Error('Alleen in lobby');
 		this.playMode = mode;
+		this.handoff = null;
+		this.challengeSeatId = null;
+		this.challengeQueue = [];
 		this.broadcast();
+	}
+
+	private addLocalPlayer(conn: Conn, name: string) {
+		this.requireHost(conn);
+		if (this.playMode !== 'single') throw new Error('Lokale spelers alleen in single-device');
+		if (this.phase !== 'lobby') throw new Error('Alleen in lobby');
+		if (this.players.length >= 12) throw new Error('Max 12 spelers');
+		const player = this.makePlayer(name, false);
+		player.connected = true;
+		this.players.push(player);
+		this.turnOrder = this.players.map((p) => p.id);
+		this.broadcast();
+	}
+
+	private removeLocalPlayer(conn: Conn, playerId: string) {
+		this.requireHost(conn);
+		if (this.playMode !== 'single') throw new Error('Alleen in single-device');
+		if (this.phase !== 'lobby') throw new Error('Alleen in lobby');
+		const p = this.players.find((x) => x.id === playerId);
+		if (!p) throw new Error('Speler niet gevonden');
+		if (p.isHost) throw new Error('Host kan niet weg (hernoem of leave room)');
+		this.players = this.players.filter((x) => x.id !== playerId);
+		this.turnOrder = this.turnOrder.filter((id) => id !== playerId);
+		this.broadcast();
+	}
+
+	private handoffAck(conn: Conn) {
+		this.requirePlayer(conn);
+		if (this.playMode !== 'single') return;
+		if (!this.handoff) return;
+		const kind = this.handoff.kind;
+		this.handoff = null;
+		this.broadcast();
+		if (kind === 'guesser' && this.phase === 'WAITING_TURN') {
+			this.beginHostPlaying();
+		} else if (kind === 'challenger' && this.phase === 'CHALLENGE_WINDOW') {
+			this.armChallengeSeatTimer();
+		} else if (kind === 'reveal' && this.phase === 'REVEAL') {
+			this.schedule('auto', this.settings.autoFlowDelayMs, () => this.beginResolve());
+		}
 	}
 
 	private setSpotifyStatus(
@@ -470,10 +548,14 @@ export class Room {
 	private start(conn: Conn) {
 		this.requireHost(conn);
 		if (this.phase !== 'lobby' && this.phase !== 'GAME_OVER') throw new Error('Spel loopt al');
+		if (this.playMode === 'single' && this.players.length < 2) {
+			throw new Error('Single-device: voeg minstens één extra speler toe');
+		}
 		const playing = this.settings.hostPlays
 			? this.players
 			: this.players.filter((p) => !p.isHost);
 		if (playing.length < 1) throw new Error('Minimaal 1 meespelende speler nodig');
+		this.deviceOwnerId = this.players.find((p) => p.isHost)?.id ?? conn.playerId;
 		// Keep Spotify deck if loaded; otherwise mock
 		if (this.spotify.source === 'spotify' && this.deckBackup.length >= 5) {
 			this.deck = this.deckBackup.map((t) => ({ ...t }));
@@ -535,8 +617,23 @@ export class Room {
 		}
 		this.phase = 'WAITING_TURN';
 		this.turn = { ...emptyTurn(), activePlayerId: playerId };
+		this.challengeSeatId = null;
+		this.challengeQueue = [];
+		this.handoff = null;
+
+		if (this.playMode === 'single' && playerId) {
+			const p = this.players.find((x) => x.id === playerId);
+			this.handoff = {
+				kind: 'guesser',
+				playerId,
+				playerName: p?.name ?? 'Speler',
+				message: `Geef de telefoon door aan ${p?.name ?? 'de volgende'}. Alleen zij/hij mag nu kijken.`
+			};
+			this.broadcast();
+			return;
+		}
+
 		this.broadcast();
-		// Auto-flow into playing
 		this.schedule('auto', this.settings.autoFlowDelayMs * 0.4, () => this.beginHostPlaying());
 	}
 
@@ -544,10 +641,10 @@ export class Room {
 		if (this.phase !== 'WAITING_TURN') return;
 		const track = this.deck.pop() ?? null;
 		if (!track) {
-			// Deck empty — highest timeline wins
 			const sorted = [...this.players].sort((a, b) => b.timeline.length - a.timeline.length);
 			this.winnerId = sorted[0]?.id ?? null;
 			this.phase = 'GAME_OVER';
+			this.handoff = null;
 			this.broadcast();
 			return;
 		}
@@ -557,8 +654,8 @@ export class Room {
 		this.turn.claims = [];
 		this.turn.challengeEndsAt = null;
 		this.turn.lastResolve = null;
+		this.handoff = null;
 		this.broadcast();
-		// Brief "playing" beat then guessing (mock audio — Spotify later)
 		this.schedule('auto', Math.min(1200, this.settings.autoFlowDelayMs), () => this.beginGuessing());
 	}
 
@@ -568,8 +665,8 @@ export class Room {
 		this.broadcast();
 	}
 
-	private lockSlot(conn: Conn, slotIndex: number) {
-		const p = this.requirePlayer(conn);
+	private lockSlot(conn: Conn, slotIndex: number, asPlayerId?: string) {
+		const p = this.requireActor(conn, asPlayerId);
 		if (this.phase !== 'GUESSING' && this.phase !== 'HOST_PLAYING') {
 			throw new Error('Nu kun je niet locken');
 		}
@@ -584,23 +681,90 @@ export class Room {
 
 	private beginChallenge() {
 		if (this.phase !== 'GUESS_LOCKED') return;
-		const mode = this.settings.challengeMode;
 		this.phase = 'CHALLENGE_WINDOW';
+
+		if (this.playMode === 'single') {
+			this.challengeQueue = this.turnOrder.filter((id) => id !== this.turn.activePlayerId);
+			this.challengeSeatId = this.challengeQueue[0] ?? null;
+			this.turn.challengeEndsAt = null;
+			if (!this.challengeSeatId) {
+				this.broadcast();
+				this.schedule('auto', 400, () => this.beginReveal());
+				return;
+			}
+			this.setChallengerHandoff(this.challengeSeatId);
+			this.broadcast();
+			return;
+		}
+
+		const mode = this.settings.challengeMode;
 		if (mode === 'timer' || mode === 'both') {
 			this.turn.challengeEndsAt = Date.now() + this.settings.challengeSeconds * 1000;
 			this.broadcast();
 			this.schedule('challenge', this.settings.challengeSeconds * 1000, () => this.beginReveal());
 		} else {
-			// host-reveal only — wait
 			this.turn.challengeEndsAt = null;
 			this.broadcast();
 		}
 	}
 
-	private challenge(conn: Conn, slotIndex: number) {
-		const p = this.requirePlayer(conn);
+	private setChallengerHandoff(playerId: string) {
+		const p = this.players.find((x) => x.id === playerId);
+		this.handoff = {
+			kind: 'challenger',
+			playerId,
+			playerName: p?.name ?? 'Speler',
+			message: `Geef door aan ${p?.name ?? 'volgende'} voor viesjes. Anderen: niet meegluren.`
+		};
+	}
+
+	private armChallengeSeatTimer() {
+		if (this.playMode !== 'single' || this.phase !== 'CHALLENGE_WINDOW') return;
+		const mode = this.settings.challengeMode;
+		if (mode === 'timer' || mode === 'both') {
+			this.turn.challengeEndsAt = Date.now() + this.settings.challengeSeconds * 1000;
+			this.broadcast();
+			this.schedule('challenge', this.settings.challengeSeconds * 1000, () => {
+				// Seat timed out → skip to next
+				this.advanceChallengeSeat();
+			});
+		} else {
+			this.turn.challengeEndsAt = null;
+			this.broadcast();
+		}
+	}
+
+	private advanceChallengeSeat() {
+		if (this.phase !== 'CHALLENGE_WINDOW') return;
+		this.clearTimers();
+		if (!this.challengeSeatId) {
+			this.beginReveal();
+			return;
+		}
+		const idx = this.challengeQueue.indexOf(this.challengeSeatId);
+		const next = idx >= 0 ? this.challengeQueue[idx + 1] : undefined;
+		this.challengeSeatId = next ?? null;
+		this.turn.challengeEndsAt = null;
+		if (!this.challengeSeatId) {
+			this.handoff = null;
+			this.broadcast();
+			this.schedule('auto', 400, () => this.beginReveal());
+			return;
+		}
+		this.setChallengerHandoff(this.challengeSeatId);
+		this.broadcast();
+	}
+
+	private challenge(conn: Conn, slotIndex: number, asPlayerId?: string) {
+		const p = this.requireActor(conn, asPlayerId);
 		if (this.phase !== 'CHALLENGE_WINDOW') throw new Error('Geen challenge-window');
 		if (p.id === this.turn.activePlayerId) throw new Error('Actieve speler kan niet challengen');
+		if (this.playMode === 'single' && p.id !== this.challengeSeatId) {
+			throw new Error('Niet jouw challenge-beurt — wacht op doorgeven');
+		}
+		if (this.playMode === 'single' && this.handoff) {
+			throw new Error('Eerst bevestigen na doorgeven');
+		}
 		if (p.tokens < 1) throw new Error('Geen viesjes');
 		if (this.turn.claims.some((c) => c.slotIndex === slotIndex)) {
 			throw new Error('Slot al geclaimd');
@@ -608,27 +772,54 @@ export class Room {
 		if (this.turn.claims.some((c) => c.playerId === p.id)) {
 			throw new Error('Al een viesje geplaatst');
 		}
-		// Challenges target slots on the *challenger's* own timeline (steal placement)
 		if (slotIndex < 0 || slotIndex > p.timeline.length) throw new Error('Ongeldig slot');
 		p.tokens -= 1;
 		this.turn.claims.push({ playerId: p.id, slotIndex, at: Date.now() });
-		this.broadcast();
+		if (this.playMode === 'single') {
+			this.advanceChallengeSeat();
+		} else {
+			this.broadcast();
+		}
+	}
+
+	private skipChallenge(conn: Conn, asPlayerId?: string) {
+		const p = this.requireActor(conn, asPlayerId);
+		if (this.phase !== 'CHALLENGE_WINDOW') throw new Error('Geen challenge-window');
+		if (this.playMode !== 'single') throw new Error('Skip challenge alleen in single-device');
+		if (p.id !== this.challengeSeatId) throw new Error('Niet jouw challenge-beurt');
+		if (this.handoff) throw new Error('Eerst bevestigen na doorgeven');
+		this.advanceChallengeSeat();
 	}
 
 	private hostReveal(conn: Conn) {
 		this.requireHost(conn);
 		if (this.phase !== 'CHALLENGE_WINDOW') throw new Error('Niet in challenge');
 		const mode = this.settings.challengeMode;
-		if (mode !== 'host-reveal' && mode !== 'both') {
+		if (mode !== 'host-reveal' && mode !== 'both' && this.playMode !== 'single') {
 			throw new Error('Host-reveal staat uit');
 		}
 		this.clearTimers();
+		this.challengeSeatId = null;
+		this.challengeQueue = [];
 		this.beginReveal();
 	}
 
 	private beginReveal() {
 		if (this.phase !== 'CHALLENGE_WINDOW' && this.phase !== 'GUESS_LOCKED') return;
 		this.phase = 'REVEAL';
+		this.challengeSeatId = null;
+		this.challengeQueue = [];
+		if (this.playMode === 'single') {
+			this.handoff = {
+				kind: 'reveal',
+				playerId: null,
+				playerName: 'Iedereen',
+				message: 'Iedereen mag meekijken — tik om de reveal te tonen.'
+			};
+			this.broadcast();
+			return;
+		}
+		this.handoff = null;
 		this.broadcast();
 		this.schedule('auto', this.settings.autoFlowDelayMs, () => this.beginResolve());
 	}
@@ -674,25 +865,30 @@ export class Room {
 		}
 	}
 
-	private skipTurn(conn: Conn) {
-		const p = this.requirePlayer(conn);
+	private skipTurn(conn: Conn, asPlayerId?: string) {
+		const p = this.requireActor(conn, asPlayerId);
 		if (p.id !== this.turn.activePlayerId) throw new Error('Niet jouw beurt');
 		if (this.phase !== 'GUESSING' && this.phase !== 'HOST_PLAYING' && this.phase !== 'WAITING_TURN') {
 			throw new Error('Te laat om te skippen');
 		}
+		if (this.playMode === 'single' && this.handoff?.kind === 'guesser') {
+			throw new Error('Eerst bevestigen na doorgeven');
+		}
 		if (p.tokens < this.settings.skipCost) throw new Error('Niet genoeg viesjes');
 		p.tokens -= this.settings.skipCost;
-		// Return track to bottom of deck
 		if (this.turn.track) this.deck.unshift(this.turn.track);
 		this.clearTimers();
 		const next = nextPlayerId(this.turnOrder, p.id);
 		this.beginWaitingTurn(next);
 	}
 
-	private threeForOne(conn: Conn) {
-		const p = this.requirePlayer(conn);
+	private threeForOne(conn: Conn, asPlayerId?: string) {
+		const p = this.requireActor(conn, asPlayerId);
 		if (!this.settings.threeForOneEnabled) throw new Error('3-voor-1 staat uit');
 		if (this.phase === 'lobby' || this.phase === 'GAME_OVER') throw new Error('Niet nu');
+		if (this.playMode === 'single' && this.handoff) {
+			throw new Error('Niet tijdens doorgeven');
+		}
 		if (p.tokens < this.settings.threeForOneCost) throw new Error('Niet genoeg viesjes');
 		const t = this.deck.pop();
 		if (!t) throw new Error('Deck leeg');
@@ -704,6 +900,7 @@ export class Room {
 			this.clearTimers();
 			this.winnerId = winner;
 			this.phase = 'GAME_OVER';
+			this.handoff = null;
 		}
 		this.broadcast();
 	}
