@@ -468,45 +468,50 @@
 						(p) =>
 							room.turnOrder.includes(p.id) &&
 							p.id !== myBoard?.id &&
-							!(phase === 'CHALLENGE_WINDOW' && p.id === room.turn.activePlayerId)
+							p.id !== room.turn.activePlayerId
 					)}
 
-					<!-- JOUW BORD -->
-					{#if myBoard}
+					<!-- 1) ACTIEVE SPELER — altijd bovenaan -->
+					{#if activePlayer && myBoardIsActive}
 						<section
 							class="game-section relative min-w-0 space-y-3 border-l-4"
-							style="border-left-color:{myBoard.color}"
-							aria-label="Jouw bord"
+							style="border-left-color:{activePlayer.color}"
+							aria-label="Actieve speler · jouw bord"
 						>
 							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
 								<div class="min-w-0">
-									<p class="game-label" style="color:{myBoard.color}">Jouw bord</p>
-									<h2 class="game-h mb-0 text-white" style="color:{myBoard.color}; text-shadow:none">
-										{myBoard.name}
+									<p class="game-label" style="color:{activePlayer.color}">
+										Aan de beurt · jouw bord
+									</p>
+									<h2
+										class="game-h mb-0 text-white"
+										style="color:{activePlayer.color}; text-shadow:none"
+									>
+										{activePlayer.name}
 									</h2>
 									<p class="mt-1 text-sm text-white/60">
-										{myBoard.timeline.length}/{room.settings.winAt} kaarten
-										{#if myBoardIsActive && phase !== 'CHALLENGE_WINDOW'}
+										{activePlayer.timeline.length}/{room.settings.winAt} kaarten
+										{#if phase !== 'CHALLENGE_WINDOW'}
 											· <span class="text-primary">jij bent aan de beurt</span>
-										{:else if myBoardIsActive && phase === 'CHALLENGE_WINDOW'}
+										{:else}
 											· <span class="text-white/50">wacht op viesjes van anderen</span>
 										{/if}
 									</p>
 								</div>
 								<span
 									class="rounded-full px-3 py-1 text-sm font-semibold"
-									style="background:{myBoard.color}33;color:{myBoard.color}"
+									style="background:{activePlayer.color}33;color:{activePlayer.color}"
 								>
-									{myBoard.tokens} viesje{myBoard.tokens === 1 ? '' : 's'}
+									{activePlayer.tokens} viesje{activePlayer.tokens === 1 ? '' : 's'}
 								</span>
 							</div>
 
 							<Timeline
-								cards={myBoard.timeline}
+								cards={activePlayer.timeline}
 								interactive={canGuess}
 								selectedSlot={canGuess ? selectedSlot : null}
-								lockedSlot={myBoardIsActive ? room.turn.lockedSlot : null}
-								claims={myBoardIsActive ? room.turn.claims : []}
+								lockedSlot={room.turn.lockedSlot}
+								claims={room.turn.claims}
 								playerColors={colorMap}
 								onSelectSlot={(s) => {
 									if (canGuess) selectedSlot = s;
@@ -521,12 +526,12 @@
 									<button
 										class="btn btn-outline"
 										onclick={() => gameClient.send({ type: 'skip_turn', asPlayerId: asId() })}
-										disabled={myBoard.tokens < room.settings.skipCost}
+										disabled={activePlayer.tokens < room.settings.skipCost}
 									>
 										Skip (−{room.settings.skipCost})
 									</button>
 								</div>
-							{:else if phase === 'CHALLENGE_WINDOW' && myBoardIsActive}
+							{:else if phase === 'CHALLENGE_WINDOW'}
 								<p class="text-sm text-white/50">
 									Jouw lock staat — viesjes komen op <em>jouw</em> bord
 									{#if challengeLeft > 0}
@@ -535,23 +540,21 @@
 								</p>
 							{/if}
 						</section>
-					{/if}
-
-					<!-- CHALLENGE: viesjes op bord van actieve speler (niet op jouw eigen bord) -->
-					{#if phase === 'CHALLENGE_WINDOW' && activePlayer && !privacyLocked && !myBoardIsActive}
+					{:else if activePlayer && phase === 'CHALLENGE_WINDOW'}
 						<section
-							class="game-section min-w-0 space-y-3 border-secondary/50"
-							aria-label="Challenge op bord van actieve speler"
+							class="game-section min-w-0 space-y-3 border-l-4 border-secondary/60"
+							style="border-left-color: var(--spotster-teal)"
+							aria-label="Actieve speler · challenge"
 						>
 							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
 								<div class="min-w-0">
 									<p class="game-label text-secondary">
-										Challenge · bord van {activePlayer.name}
+										Aan de beurt · challenge op {activePlayer.name}
 									</p>
 									<h2 class="game-h mb-0">{activePlayer.name}</h2>
 									<p class="text-sm text-white/55">
-										Leg een viesje op een slot op <strong>dit</strong> bord (waar jij denkt dat het
-										nummer hoort) — niet op jouw eigen bord.
+										Leg een viesje op een slot op <strong>dit</strong> bord (waar jij denkt dat
+										het nummer hoort) — niet op jouw eigen bord.
 									</p>
 								</div>
 								{#if challengeLeft > 0}
@@ -595,29 +598,78 @@
 								<p class="text-sm text-secondary">Viesje geplaatst — wachten…</p>
 							{/if}
 						</section>
-					{:else if !isSingle && activePlayer && me && activePlayer.id !== me.id && (phase === 'HOST_PLAYING' || phase === 'GUESSING' || phase === 'GUESS_LOCKED')}
-						<section class="game-section active-board-ref min-w-0" aria-label="Bord van actieve speler">
-							<p class="game-label text-zinc-400">Nu aan zet · niet jouw bord</p>
-							<div class="mb-2 flex items-center gap-2">
-								<span class="h-2.5 w-2.5 rounded-full bg-zinc-400"></span>
-								<h3 class="game-h mb-0 text-zinc-300" style="color:#d4d4d8;text-shadow:none">
-									{activePlayer.name}
-								</h3>
-								<span class="text-xs text-zinc-500"
-									>{activePlayer.timeline.length}/{room.settings.winAt}</span
+					{:else if activePlayer}
+						<section
+							class="game-section min-w-0 space-y-3 border-l-4"
+							style="border-left-color:{activePlayer.color}"
+							aria-label="Actieve speler"
+						>
+							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
+								<div class="min-w-0">
+									<p class="game-label" style="color:{activePlayer.color}">Aan de beurt</p>
+									<h2
+										class="game-h mb-0"
+										style="color:{activePlayer.color}; text-shadow:none"
+									>
+										{activePlayer.name}
+									</h2>
+									<p class="mt-1 text-sm text-white/60">
+										{activePlayer.timeline.length}/{room.settings.winAt} kaarten
+										· <span class="text-primary">nu aan zet</span>
+									</p>
+								</div>
+								<span
+									class="rounded-full px-3 py-1 text-sm font-semibold"
+									style="background:{activePlayer.color}33;color:{activePlayer.color}"
 								>
+									{activePlayer.tokens} viesje{activePlayer.tokens === 1 ? '' : 's'}
+								</span>
 							</div>
-							<div class="min-w-0 grayscale">
+							<div class="min-w-0">
 								<Timeline
 									cards={activePlayer.timeline}
 									lockedSlot={room.turn.lockedSlot}
+									claims={room.turn.claims}
+									playerColors={colorMap}
 									dimYears
 								/>
 							</div>
 						</section>
 					{/if}
 
-					<!-- Andere spelers — secundair (actieve tijdens challenge zit hierboven) -->
+					<!-- 2) JOUW BORD — alleen als jij niet de actieve speler bent -->
+					{#if myBoard && !myBoardIsActive}
+						<section
+							class="game-section relative min-w-0 space-y-3 border-l-4 opacity-95"
+							style="border-left-color:{myBoard.color}"
+							aria-label="Jouw bord"
+						>
+							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
+								<div class="min-w-0">
+									<p class="game-label" style="color:{myBoard.color}">Jouw bord</p>
+									<h2
+										class="game-h mb-0 text-white"
+										style="color:{myBoard.color}; text-shadow:none"
+									>
+										{myBoard.name}
+									</h2>
+									<p class="mt-1 text-sm text-white/60">
+										{myBoard.timeline.length}/{room.settings.winAt} kaarten
+									</p>
+								</div>
+								<span
+									class="rounded-full px-3 py-1 text-sm font-semibold"
+									style="background:{myBoard.color}33;color:{myBoard.color}"
+								>
+									{myBoard.tokens} viesje{myBoard.tokens === 1 ? '' : 's'}
+								</span>
+							</div>
+
+							<Timeline cards={myBoard.timeline} />
+						</section>
+					{/if}
+
+					<!-- 3) Andere spelers — onder actieve (+ jouw bord) -->
 					{#if others.length}
 						<section class="game-section min-w-0 space-y-3" aria-label="Andere spelers">
 							<h2 class="game-h">Andere spelers</h2>
