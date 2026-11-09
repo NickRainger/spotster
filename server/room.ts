@@ -53,11 +53,16 @@ export class Room {
 	};
 	handoff: HandoffState | null = null;
 	challengeSeatId: string | null = null;
+	/** Pending host confirm for title/artist → viesje (pauses timers + music) */
+	titleConfirm: { playerId: string; playerName: string; requestedAt: number } | null = null;
 	private challengeQueue: string[] = [];
 	/** Device owner connection playerId (host) — acts for local seats in single mode */
 	private deviceOwnerId: string | null = null;
 	private conns = new Set<Conn>();
 	private timers = new Map<string, ReturnType<typeof setTimeout>>();
+	/** Remaining ms for challenge timer when paused for titleConfirm */
+	private pausedChallengeMs: number | null = null;
+	private challengeTimerStartedAt: number | null = null;
 	private turnIndexSeed = 0;
 
 	constructor(code?: string, settings?: Partial<GameSettings>) {
@@ -135,7 +140,8 @@ export class Room {
 			createdAt: this.createdAt,
 			spotify: { ...this.spotify },
 			challengeSeatId: this.challengeSeatId,
-			handoff: this.handoff ? { ...this.handoff } : null
+			handoff: this.handoff ? { ...this.handoff } : null,
+			titleConfirm: this.titleConfirm ? { ...this.titleConfirm } : null
 		};
 	}
 
@@ -205,8 +211,11 @@ export class Room {
 				case 'token_earn_approve':
 					this.tokenEarnApprove(conn, msg.playerId);
 					break;
+				case 'token_earn_deny':
+					this.tokenEarnDeny(conn);
+					break;
 				case 'request_token':
-					this.requestToken(conn);
+					this.requestToken(conn, msg.asPlayerId);
 					break;
 				case 'set_play_mode':
 					this.setPlayMode(conn, msg.mode);
@@ -636,24 +645,63 @@ export class Room {
 	private clearTimers() {
 		for (const t of this.timers.values()) clearTimeout(t);
 		this.timers.clear();
+		this.challengeTimerStartedAt = null;
 	}
 
 	private schedule(key: string, ms: number, fn: () => void) {
 		const prev = this.timers.get(key);
 		if (prev) clearTimeout(prev);
+		if (key === 'challenge') this.challengeTimerStartedAt = Date.now();
 		this.timers.set(
 			key,
 			setTimeout(() => {
 				this.timers.delete(key);
+				if (key === 'challenge') this.challengeTimerStartedAt = null;
 				fn();
 			}, ms)
 		);
+	}
+
+	/** Freeze auto/challenge timers while host confirms a title/artist viesje. */
+	private pauseForTitleConfirm() {
+		const challengeTimer = this.timers.get('challenge');
+		if (challengeTimer && this.challengeTimerStartedAt != null && this.turn.challengeEndsAt) {
+			this.pausedChallengeMs = Math.max(0, this.turn.challengeEndsAt - Date.now());
+		} else {
+			this.pausedChallengeMs = null;
+		}
+		this.clearTimers();
+		this.turn.challengeEndsAt = null;
+	}
+
+	private resumeAfterTitleConfirm() {
+		const remaining = this.pausedChallengeMs;
+		this.pausedChallengeMs = null;
+		if (
+			remaining != null &&
+			remaining > 200 &&
+			this.phase === 'CHALLENGE_WINDOW' &&
+			(this.settings.challengeMode === 'timer' || this.settings.challengeMode === 'both')
+		) {
+			this.turn.challengeEndsAt = Date.now() + remaining;
+			this.schedule('challenge', remaining, () => this.beginReveal());
+		}
+	}
+
+	private assertFlowNotPaused() {
+		if (this.titleConfirm) {
+			throw new Error(
+				`Gepauzeerd: host moet titel/artiest van ${this.titleConfirm.playerName} nog bevestigen`
+			);
+		}
 	}
 
 	private beginWaitingTurn(playerId: string | null) {
 		if (!playerId || !this.turnOrder.includes(playerId)) {
 			playerId = this.turnOrder[0] ?? null;
 		}
+		this.titleConfirm = null;
+		this.pausedChallengeMs = null;
 		this.phase = 'WAITING_TURN';
 		this.turn = { ...emptyTurn(), activePlayerId: playerId };
 		this.challengeSeatId = null;
@@ -678,6 +726,7 @@ export class Room {
 
 	private beginHostPlaying() {
 		if (this.phase !== 'WAITING_TURN') return;
+		if (this.titleConfirm) return;
 		const track = this.deck.pop() ?? null;
 		if (!track) {
 			const sorted = [...this.players].sort((a, b) => b.timeline.length - a.timeline.length);
@@ -700,11 +749,13 @@ export class Room {
 
 	private beginGuessing() {
 		if (this.phase !== 'HOST_PLAYING') return;
+		if (this.titleConfirm) return;
 		this.phase = 'GUESSING';
 		this.broadcast();
 	}
 
 	private lockSlot(conn: Conn, slotIndex: number, asPlayerId?: string) {
+		this.assertFlowNotPaused();
 		const p = this.requireActor(conn, asPlayerId);
 		if (this.phase !== 'GUESSING' && this.phase !== 'HOST_PLAYING') {
 			throw new Error('Nu kun je niet locken');
@@ -720,6 +771,7 @@ export class Room {
 
 	private beginChallenge() {
 		if (this.phase !== 'GUESS_LOCKED') return;
+		if (this.titleConfirm) return;
 		this.phase = 'CHALLENGE_WINDOW';
 
 		if (this.playMode === 'single') {
@@ -795,6 +847,7 @@ export class Room {
 	}
 
 	private challenge(conn: Conn, slotIndex: number, asPlayerId?: string) {
+		this.assertFlowNotPaused();
 		const p = this.requireActor(conn, asPlayerId);
 		if (this.phase !== 'CHALLENGE_WINDOW') throw new Error('Geen challenge-window');
 		if (p.id === this.turn.activePlayerId) throw new Error('Actieve speler kan niet challengen');
@@ -828,6 +881,7 @@ export class Room {
 	}
 
 	private skipChallenge(conn: Conn, asPlayerId?: string) {
+		this.assertFlowNotPaused();
 		const p = this.requireActor(conn, asPlayerId);
 		if (this.phase !== 'CHALLENGE_WINDOW') throw new Error('Geen challenge-window');
 		if (this.playMode !== 'single') throw new Error('Skip challenge alleen in single-device');
@@ -838,6 +892,7 @@ export class Room {
 
 	private hostReveal(conn: Conn) {
 		this.requireHost(conn);
+		this.assertFlowNotPaused();
 		if (this.phase !== 'CHALLENGE_WINDOW') throw new Error('Niet in challenge');
 		const mode = this.settings.challengeMode;
 		if (mode !== 'host-reveal' && mode !== 'both' && this.playMode !== 'single') {
@@ -851,6 +906,7 @@ export class Room {
 
 	private beginReveal() {
 		if (this.phase !== 'CHALLENGE_WINDOW' && this.phase !== 'GUESS_LOCKED') return;
+		if (this.titleConfirm) return;
 		this.phase = 'REVEAL';
 		this.challengeSeatId = null;
 		this.challengeQueue = [];
@@ -914,6 +970,7 @@ export class Room {
 	}
 
 	private skipTurn(conn: Conn, asPlayerId?: string) {
+		this.assertFlowNotPaused();
 		const p = this.requireActor(conn, asPlayerId);
 		if (p.id !== this.turn.activePlayerId) throw new Error('Niet jouw beurt');
 		if (this.phase !== 'GUESSING' && this.phase !== 'HOST_PLAYING' && this.phase !== 'WAITING_TURN') {
@@ -931,6 +988,7 @@ export class Room {
 	}
 
 	private threeForOne(conn: Conn, asPlayerId?: string) {
+		this.assertFlowNotPaused();
 		const p = this.requireActor(conn, asPlayerId);
 		if (!this.settings.threeForOneEnabled) throw new Error('3-voor-1 staat uit');
 		if (this.phase === 'lobby' || this.phase === 'GAME_OVER') throw new Error('Niet nu');
@@ -955,6 +1013,7 @@ export class Room {
 
 	private hostSkipTurn(conn: Conn) {
 		this.requireHost(conn);
+		this.assertFlowNotPaused();
 		if (this.phase === 'lobby' || this.phase === 'GAME_OVER') throw new Error('Niet nu');
 		if (this.turn.track) this.deck.unshift(this.turn.track);
 		this.clearTimers();
@@ -968,6 +1027,8 @@ export class Room {
 		if (!['WAITING_TURN', 'GUESSING', 'CHALLENGE_WINDOW', 'REVEAL'].includes(phase)) {
 			throw new Error('Ongeldige force-phase');
 		}
+		this.titleConfirm = null;
+		this.pausedChallengeMs = null;
 		this.clearTimers();
 		this.phase = phase;
 		this.broadcast();
@@ -979,31 +1040,85 @@ export class Room {
 		const target = this.players.find((p) => p.id === playerId);
 		if (!target) throw new Error('Speler niet gevonden');
 		if (target.tokens >= this.settings.tokensMax) throw new Error('Max viesjes bereikt');
+
+		// Prefer resolving an open confirm for this player
+		if (this.titleConfirm && this.titleConfirm.playerId !== playerId) {
+			throw new Error(
+				`Er wacht nog een bevestiging voor ${this.titleConfirm.playerName} — keur die eerst goed of af`
+			);
+		}
+
 		target.tokens += 1;
+		const hadConfirm = !!this.titleConfirm;
+		this.titleConfirm = null;
+		if (hadConfirm) this.resumeAfterTitleConfirm();
 		this.broadcast();
+		this.sendTo(target.id, {
+			type: 'notice',
+			message: `Host keurde titel/artiest goed — je krijgt +1 viesje (nu ${target.tokens}).`
+		});
 	}
 
-	private requestToken(conn: Conn) {
-		const p = this.requirePlayer(conn);
+	private tokenEarnDeny(conn: Conn) {
+		this.requireHost(conn);
+		if (!this.titleConfirm) throw new Error('Geen openstaande bevestiging');
+		const name = this.titleConfirm.playerName;
+		const pid = this.titleConfirm.playerId;
+		this.titleConfirm = null;
+		this.resumeAfterTitleConfirm();
+		this.broadcast();
+		this.sendTo(pid, {
+			type: 'notice',
+			message: 'Host wees titel/artiest af — geen viesje.'
+		});
+		for (const c of this.conns) {
+			if (c.playerId && c.playerId !== pid) {
+				c.send({ type: 'notice', message: `Host wees ${name} af — spel gaat verder.` });
+			}
+		}
+	}
+
+	private requestToken(conn: Conn, asPlayerId?: string) {
+		const p = this.requireActor(conn, asPlayerId);
 		if (this.settings.tokenEarnMode === 'off') throw new Error('Token verdienen staat uit');
+		if (this.phase === 'lobby' || this.phase === 'GAME_OVER') {
+			throw new Error('Alleen tijdens het spel');
+		}
+		if (p.tokens >= this.settings.tokensMax) throw new Error('Max viesjes bereikt');
+
 		if (this.settings.tokenEarnMode === 'votes') {
 			// Stub: auto-grant for MVP when votes mode (full vote UI later)
-			if (p.tokens >= this.settings.tokensMax) throw new Error('Max viesjes bereikt');
 			p.tokens += 1;
 			this.broadcast();
 			return;
 		}
-		// host mode — just a signal; host uses approve. Echo via broadcast room state only.
-		this.broadcast();
-		for (const c of this.conns) {
-			const host = this.players.find((x) => x.id === c.playerId && x.isHost);
-			if (host) {
-				c.send({
-					type: 'error',
-					message: `${p.name} vraagt een viesje (titel/artiest) — keur goed via host-panel`
-				});
-			}
+
+		// host mode: freeze game until host confirms title/artist
+		if (this.titleConfirm) {
+			throw new Error(
+				`Er loopt al een bevestiging voor ${this.titleConfirm.playerName} — wacht op de host`
+			);
 		}
+
+		this.titleConfirm = {
+			playerId: p.id,
+			playerName: p.name,
+			requestedAt: Date.now()
+		};
+		this.pauseForTitleConfirm();
+		this.broadcast();
+
+		const host = this.players.find((x) => x.isHost);
+		if (host) {
+			this.sendTo(host.id, {
+				type: 'notice',
+				message: `${p.name} claimt titel/artiest — keur goed of af. Spel/muziek staan gepauzeerd.`
+			});
+		}
+		this.sendTo(p.id, {
+			type: 'notice',
+			message: 'Wachten op host… zeg titel/artiest hardop. Spel pauzeert tot bevestiging.'
+		});
 	}
 }
 

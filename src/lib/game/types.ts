@@ -133,6 +133,15 @@ export interface RoomPublic {
 	challengeSeatId: string | null;
 	/** Single-device: pass-phone overlay */
 	handoff: HandoffState | null;
+	/**
+	 * Host must confirm title/artist for a viesje.
+	 * While set, timers are frozen and clients should pause music.
+	 */
+	titleConfirm: {
+		playerId: string;
+		playerName: string;
+		requestedAt: number;
+	} | null;
 }
 
 export type ClientMessage =
@@ -154,7 +163,8 @@ export type ClientMessage =
 	| { type: 'host_skip_turn' }
 	| { type: 'host_force_phase'; phase: GamePhase }
 	| { type: 'token_earn_approve'; playerId: string }
-	| { type: 'request_token' }
+	| { type: 'token_earn_deny' }
+	| { type: 'request_token'; asPlayerId?: string }
 	| { type: 'set_play_mode'; mode: 'multi' | 'single' }
 	| { type: 'add_local_player'; name: string }
 	| { type: 'remove_local_player'; playerId: string }

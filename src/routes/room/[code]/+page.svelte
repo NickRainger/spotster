@@ -503,9 +503,56 @@
 						track={room.turn.track}
 						settings={room.settings}
 						spotifySource={room.spotify?.source ?? 'mock'}
+						titleConfirmPaused={!!room.titleConfirm}
 						compact
 					/>
 				</div>
+
+				{#if room.titleConfirm}
+					<section
+						class="anim-enter rounded-2xl border-2 border-secondary bg-secondary/15 px-4 py-4"
+						aria-live="polite"
+					>
+						<p class="game-label text-secondary">Gepauzeerd · viesje-check</p>
+						{#if isHost}
+							<p class="font-display mt-1 text-2xl leading-tight text-white sm:text-3xl">
+								{room.titleConfirm.playerName} claimt titel/artiest
+							</p>
+							<p class="mt-1 text-sm text-white/65">
+								Speler noemt titel of artiest. Keur goed voor +1 viesje, of wijs af. Muziek &amp;
+								timers staan stil.
+							</p>
+							<div class="mt-3 flex flex-wrap gap-2">
+								<button
+									type="button"
+									class="btn btn-secondary btn-md min-h-12"
+									onclick={() =>
+										gameClient.send({
+											type: 'token_earn_approve',
+											playerId: room.titleConfirm!.playerId
+										})}
+								>
+									Goedkeuren → +1 viesje
+								</button>
+								<button
+									type="button"
+									class="btn btn-outline btn-md min-h-12"
+									onclick={() => gameClient.send({ type: 'token_earn_deny' })}
+								>
+									Afwijzen
+								</button>
+							</div>
+						{:else}
+							<p class="font-display mt-1 text-2xl leading-tight text-white sm:text-3xl">
+								Wachten op host…
+							</p>
+							<p class="mt-1 text-sm text-white/65">
+								{room.titleConfirm.playerName} wacht op bevestiging van titel/artiest. Spel &amp;
+								muziek pauzeren.
+							</p>
+						{/if}
+					</section>
+				{/if}
 
 				{#if !privacyLocked && room.turn.lastResolve && (phase === 'RESOLVE' || phase === 'CHECK_WIN')}
 					{@const r = room.turn.lastResolve}
@@ -792,10 +839,13 @@
 							<button
 								class="btn btn-ghost btn-sm border border-secondary/30"
 								type="button"
-								onclick={() => gameClient.send({ type: 'request_token' })}
-								disabled={seatPlayer.tokens >= room.settings.tokensMax}
+								onclick={() =>
+									gameClient.send({ type: 'request_token', asPlayerId: asId() })}
+								disabled={seatPlayer.tokens >= room.settings.tokensMax || !!room.titleConfirm}
 							>
-								Vraag viesje (liedje goed)
+								{room.titleConfirm?.playerId === seatPlayer.id
+									? 'Wachten op host…'
+									: 'Vraag viesje (liedje goed)'}
 							</button>
 						{/if}
 						{#if isHost && (room.settings.challengeMode === 'host-reveal' || room.settings.challengeMode === 'both' || isSingle) && phase === 'CHALLENGE_WINDOW'}
@@ -814,14 +864,15 @@
 						>
 					</div>
 
-					{#if isHost && room.settings.tokenEarnMode === 'host'}
+					{#if isHost && room.settings.tokenEarnMode === 'host' && !room.titleConfirm}
 						<div class="game-section min-w-0 space-y-3">
 							<h2 class="game-h">
 								Liedje goed?
 								<span class="game-h-sub">keur titel / artiest goed → +1 viesje</span>
 							</h2>
 							<p class="text-sm text-white/55">
-								Speler noemt titel of artiest juist? Geef een viesje.
+								Of laat de speler op “Vraag viesje” drukken — dan pauzeert het spel tot jij
+								bevestigt. Je kunt hier ook direct +1 geven.
 							</p>
 							<div class="flex flex-col gap-2">
 								{#each room.players.filter((p) => room.turnOrder.includes(p.id)) as p}

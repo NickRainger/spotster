@@ -12,9 +12,19 @@
 		settings: GameSettings;
 		spotifySource: 'mock' | 'spotify';
 		compact?: boolean;
+		/** Host must confirm title/artist — pause music until cleared */
+		titleConfirmPaused?: boolean;
 	}
 
-	let { isHost, phase, track, settings, spotifySource, compact = false }: Props = $props();
+	let {
+		isHost,
+		phase,
+		track,
+		settings,
+		spotifySource,
+		compact = false,
+		titleConfirmPaused = false
+	}: Props = $props();
 
 	let status = $state<HostPlayerStatus>({
 		mode: 'none',
@@ -28,17 +38,20 @@
 		busy: false
 	});
 	let lastPlayKey = $state<string | null>(null);
+	let pausedForConfirm = $state(false);
 
 	const spotifyReady = $derived(spotifySource === 'spotify');
 
 	const modeLabel = $derived(
 		!spotifyReady
 			? 'Spotify vereist'
-			: status.mode === 'premium'
-				? 'Spotify'
-				: status.mode === 'preview'
-					? 'Preview'
-					: 'Spotify'
+			: titleConfirmPaused
+				? 'Gepauzeerd (viesje)'
+				: status.mode === 'premium'
+					? 'Spotify'
+					: status.mode === 'preview'
+						? 'Preview'
+						: 'Spotify'
 	);
 
 	const playOpts = $derived(
@@ -70,6 +83,27 @@
 		if (phase === 'lobby' || phase === 'GAME_OVER') {
 			void hostPlayer.pause();
 			lastPlayKey = null;
+			pausedForConfirm = false;
+			return;
+		}
+
+		if (titleConfirmPaused) {
+			pausedForConfirm = true;
+			void hostPlayer.pause();
+			return;
+		}
+
+		if (pausedForConfirm) {
+			pausedForConfirm = false;
+			if (track && status.unlocked) {
+				void hostPlayer.playTrack({
+					uri: track.spotifyUri,
+					previewUrl: track.previewUrl,
+					playDurationSec: settings.playDurationSec,
+					playOffsetSec: settings.playOffsetSec,
+					fromUserGesture: true
+				});
+			}
 			return;
 		}
 
