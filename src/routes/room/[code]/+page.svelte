@@ -12,6 +12,7 @@
 	import { PHASE_LABELS } from '#lib/game/engine';
 	import type { GameSettings } from '#lib/game/types';
 	import { gameClient, loadSession } from '#lib/ws/client';
+	import { hostPlayer } from '#lib/spotify/player';
 
 	let name = $state('Speler');
 	let joined = $state(false);
@@ -356,7 +357,12 @@
 							>
 							<button
 								class="btn btn-primary btn-lg min-h-14 w-full px-10 text-base"
-								onclick={() => gameClient.send({ type: 'start' })}
+								onclick={() => {
+									// Same tap unlocks Web Playback / HTMLAudio so the first track can auto-start
+									void hostPlayer?.unlockAudio();
+									void hostPlayer?.initFromSession();
+									gameClient.send({ type: 'start' });
+								}}
 								disabled={(isSingle && room.turnOrder.length < 1) || !spotifyReady}
 								>Start spel</button
 							>
@@ -425,8 +431,12 @@
 							{room.players.find((p) => p.id === room.winnerId)?.name ?? '???'}
 						</p>
 						{#if isHost}
-							<button class="btn btn-primary mt-4" onclick={() => gameClient.send({ type: 'start' })}
-								>Nog een ronde</button
+							<button
+								class="btn btn-primary mt-4"
+								onclick={() => {
+									void hostPlayer?.unlockAudio();
+									gameClient.send({ type: 'start' });
+								}}>Nog een ronde</button
 							>
 						{/if}
 					</div>

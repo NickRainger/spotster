@@ -23,21 +23,10 @@
 		playing: false,
 		error: null,
 		unlocked: false,
-		needsGesture: false
+		needsGesture: false,
+		busy: false
 	});
 	let lastPlayKey = $state<string | null>(null);
-
-	/** Phases where the current track is “in play” for UI (play/pause controls). */
-	const activePlayPhases: GamePhase[] = [
-		'HOST_PLAYING',
-		'GUESSING',
-		'GUESS_LOCKED',
-		'CHALLENGE_WINDOW',
-		'REVEAL',
-		'RESOLVE',
-		'CHECK_WIN',
-		'WAITING_TURN'
-	];
 
 	const spotifyReady = $derived(spotifySource === 'spotify');
 
@@ -77,8 +66,7 @@
 	$effect(() => {
 		if (!isHost || !hostPlayer || !spotifyReady) return;
 
-		// Only hard-stop at lobby / game over — keep audio through reveal/score/waiting
-		// until the next track’s playTrack() replaces it.
+		// Keep audio through reveal/score/waiting; only stop at lobby / game over.
 		if (phase === 'lobby' || phase === 'GAME_OVER') {
 			void hostPlayer.pause();
 			lastPlayKey = null;
@@ -97,26 +85,14 @@
 		}
 	});
 
-	function onPlayTap() {
-		if (!hostPlayer) return;
-		if (playOpts) {
-			void hostPlayer.playFromUserGesture(playOpts);
-			return;
-		}
-		void hostPlayer.resume();
+	function onMainTap() {
+		if (!hostPlayer || status.busy) return;
+		void hostPlayer.togglePlay(playOpts ?? undefined);
 	}
 
-	function onPauseTap() {
-		void hostPlayer?.pause();
-	}
-
-	function onResumeTap() {
+	function onSeekStart() {
 		if (!hostPlayer) return;
-		if (playOpts && (status.needsGesture || !status.unlocked)) {
-			void hostPlayer.playFromUserGesture(playOpts);
-			return;
-		}
-		void hostPlayer.resume();
+		void hostPlayer.seek((settings.playOffsetSec ?? 0) * 1000);
 	}
 </script>
 
@@ -130,6 +106,20 @@
 				</p>
 			</div>
 		{:else}
+			{#if !status.unlocked}
+				<button
+					type="button"
+					class="btn btn-primary btn-lg min-h-14 w-full text-base"
+					disabled={status.busy}
+					onclick={onMainTap}
+				>
+					Activeer Spotify-audio
+				</button>
+				<p class="text-sm text-warning">
+					Eén tik ontgrendelt de browser — daarna starten nummers vanzelf.
+				</p>
+			{/if}
+
 			<MockNowPlaying
 				playing={status.playing}
 				phaseLabel={PHASE_LABELS[phase]}
@@ -137,40 +127,33 @@
 				{modeLabel}
 			/>
 
-			{#if status.needsGesture && track && phase === 'HOST_PLAYING'}
-				<button
-					type="button"
-					class="btn btn-primary btn-lg min-h-14 w-full text-base sm:w-auto"
-					onclick={onPlayTap}
-				>
-					Speel dit nummer
-				</button>
-				<p class="text-sm text-warning">
-					Browser blokkeert autoplay — één tik start Spotify.
-				</p>
+			{#if status.needsGesture && status.unlocked && track && phase === 'HOST_PLAYING'}
+				<p class="text-sm text-warning">Autoplay geblokkeerd — tik Speel hieronder.</p>
 			{/if}
 
 			<div class="flex flex-wrap items-center gap-2">
-				{#if status.playing}
-					<button type="button" class="btn btn-outline btn-md min-h-12 min-w-24" onclick={onPauseTap}
-						>Pauze</button
-					>
-				{:else if track || lastPlayKey}
-					<button type="button" class="btn btn-primary btn-md min-h-12 min-w-24" onclick={onResumeTap}
-						>Speel</button
-					>
-				{/if}
 				<button
 					type="button"
-					class="btn btn-ghost btn-md min-h-12"
-					onclick={() => hostPlayer?.unlockAudio()}>Unlock</button
+					class="btn btn-lg min-h-14 min-w-36 text-base {status.playing
+						? 'btn-outline'
+						: 'btn-primary'}"
+					disabled={status.busy || (!track && !lastPlayKey && !status.playing)}
+					onclick={onMainTap}
 				>
+					{#if status.busy}
+						<span class="loading loading-spinner loading-sm"></span>
+					{:else if status.playing}
+						Pauze
+					{:else}
+						Speel
+					{/if}
+				</button>
 				{#if track && status.mode === 'premium'}
 					<button
 						type="button"
 						class="btn btn-ghost btn-md min-h-12"
-						onclick={() => hostPlayer?.seek((settings.playOffsetSec ?? 0) * 1000)}
-						>Naar start</button
+						disabled={status.busy}
+						onclick={onSeekStart}>Naar start</button
 					>
 				{/if}
 			</div>
@@ -198,7 +181,7 @@
 	</div>
 {:else}
 	<MockNowPlaying
-		playing={activePlayPhases.includes(phase)}
+		playing={status.playing || phase === 'HOST_PLAYING' || phase === 'GUESSING'}
 		phaseLabel={PHASE_LABELS[phase]}
 		{track}
 		modeLabel="Host speelt Spotify"

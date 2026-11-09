@@ -1,7 +1,10 @@
 /**
  * Host-side playback: Web Playback SDK (Premium) or HTMLAudio preview (Free).
- * Auto-play from game phases is often blocked without a prior user gesture —
- * unlockAudio() / playFromUserGesture() arm the same path as manual Play.
+ *
+ * Click reliability notes:
+ * - activateElement() must run in the user-gesture call stack (before awaits).
+ * - Do NOT transfer(play:false) before every /play — Spotify races those calls.
+ * - playFromUserGesture must not unlock+replay the same track twice.
  */
 
 import type { SpotifyAccountTier, SpotifyPlaybackSettings } from './stub';
@@ -29,6 +32,7 @@ interface SpotifyPlayerInstance {
 	resume: () => Promise<void>;
 	seek: (ms: number) => Promise<void>;
 	activateElement: () => Promise<void>;
+	togglePlay: () => Promise<void>;
 }
 
 export type PlaybackMode = 'premium' | 'preview' | 'mock' | 'none';
@@ -52,6 +56,7 @@ export interface HostPlayerStatus {
 	unlocked: boolean;
 	/** Auto-start failed or blocked — host must tap Play */
 	needsGesture: boolean;
+	busy: boolean;
 }
 
 type StatusListener = (s: HostPlayerStatus) => void;
@@ -65,7 +70,8 @@ export class HostSpotifyPlayer {
 		playing: false,
 		error: null,
 		unlocked: false,
-		needsGesture: false
+		needsGesture: false,
+		busy: false
 	};
 
 	private listeners = new Set<StatusListener>();
@@ -75,7 +81,10 @@ export class HostSpotifyPlayer {
 	private unlocked = false;
 	private accessToken: string | null = null;
 	private pending: PlayTrackOpts | null = null;
+	private lastOpts: PlayTrackOpts | null = null;
 	private readyWaiters: Array<() => void> = [];
+	private playSeq = 0;
+	private transferredOnce = false;
 
 	onStatus(fn: StatusListener) {
 		this.listeners.add(fn);
@@ -92,35 +101,38 @@ export class HostSpotifyPlayer {
 		this.emit();
 	}
 
-	/** Call from a tap/click. Arms audio + flushes any pending auto-play track. */
-	async unlockAudio() {
+	/** Sync part of a user gesture — call before any await. */
+	private armGestureSync() {
 		if (typeof window === 'undefined') return;
 		if (!this.audio) this.audio = new Audio();
+		// Fire-and-forget silent arm so HTMLAudio is unlocked in this gesture tick
 		try {
 			this.audio.src =
 				'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-			await this.audio.play();
-			this.audio.pause();
-			this.unlocked = true;
-			this.set({ unlocked: true, needsGesture: false, error: null });
-			if (this.sdkPlayer) {
-				try {
-					await this.sdkPlayer.activateElement?.();
-				} catch {
-					/* ignore */
-				}
+			void this.audio.play().then(() => this.audio?.pause()).catch(() => null);
+		} catch {
+			/* ignore */
+		}
+		if (this.sdkPlayer) {
+			try {
+				void this.sdkPlayer.activateElement?.();
+			} catch {
+				/* ignore */
 			}
-			if (this.pending) {
-				const opts = this.pending;
-				this.pending = null;
-				await this.playTrack({ ...opts, fromUserGesture: true });
-			}
-		} catch (e) {
-			this.set({
-				unlocked: false,
-				needsGesture: true,
-				error: e instanceof Error ? e.message : 'Unlock mislukt — tik opnieuw'
-			});
+		}
+		this.unlocked = true;
+		this.set({ unlocked: true, needsGesture: false });
+	}
+
+	/** Call from a tap/click. Arms audio + flushes any pending auto-play track. */
+	async unlockAudio() {
+		if (typeof window === 'undefined') return;
+		this.armGestureSync();
+		this.set({ error: null });
+		if (this.pending) {
+			const opts = this.pending;
+			this.pending = null;
+			await this.playTrack({ ...opts, fromUserGesture: true });
 		}
 	}
 
@@ -197,6 +209,7 @@ export class HostSpotifyPlayer {
 		});
 		player.addListener('not_ready', () => {
 			this.set({ ready: false });
+			this.transferredOnce = false;
 		});
 		player.addListener('initialization_error', ({ message }: { message: string }) => {
 			this.set({ mode: 'preview', ready: true, error: message });
@@ -207,8 +220,20 @@ export class HostSpotifyPlayer {
 		player.addListener('account_error', ({ message }: { message: string }) => {
 			this.set({ mode: 'preview', ready: true, error: message, tier: 'free' });
 		});
+		player.addListener('autoplay_failed', () => {
+			this.set({
+				playing: false,
+				needsGesture: true,
+				unlocked: false,
+				error: 'Browser blokkeert autoplay — tik Speel'
+			});
+			this.unlocked = false;
+		});
 		player.addListener('player_state_changed', (state: { paused?: boolean } | null) => {
-			this.set({ playing: !!state && !state.paused });
+			// Ignore null/transient states while a play request is in flight
+			if (this.status.busy) return;
+			if (!state) return;
+			this.set({ playing: !state.paused });
 		});
 		this.sdkPlayer = player;
 		const ok = await player.connect();
@@ -232,9 +257,10 @@ export class HostSpotifyPlayer {
 		});
 	}
 
-	private async transferPlayback() {
-		if (!this.accessToken || !this.status.deviceId) return;
-		await fetch('https://api.spotify.com/v1/me/player', {
+	/** One-time soft transfer so Spotster shows up as the active device. */
+	private async ensureDevice() {
+		if (!this.accessToken || !this.status.deviceId || this.transferredOnce) return;
+		const res = await fetch('https://api.spotify.com/v1/me/player', {
 			method: 'PUT',
 			headers: {
 				Authorization: `Bearer ${this.accessToken}`,
@@ -242,104 +268,151 @@ export class HostSpotifyPlayer {
 			},
 			body: JSON.stringify({ device_ids: [this.status.deviceId], play: false })
 		}).catch(() => null);
+		// 204 ok, 404 = nothing was playing yet — still fine for subsequent /play?device_id=
+		if (!res || res.ok || res.status === 404 || res.status === 204) {
+			this.transferredOnce = true;
+		}
 	}
 
 	async playTrack(opts: PlayTrackOpts) {
 		this.clearStopTimer();
+		this.lastOpts = { ...opts };
 		const offsetMs = Math.max(0, (opts.playOffsetSec ?? 0) * 1000);
-		// 0 / missing negative → unlimited (no auto-stop); else clip length
 		const unlimited = !opts.playDurationSec || opts.playDurationSec <= 0;
 		const durationMs = unlimited ? 0 : Math.max(3000, opts.playDurationSec * 1000);
 		const fromGesture = !!opts.fromUserGesture;
+		const seq = ++this.playSeq;
 
-		// Queue until unlock if auto-path and never armed
 		if (!fromGesture && !this.unlocked) {
 			this.pending = opts;
 			this.set({
 				playing: false,
 				needsGesture: true,
-				error: 'Tik Speel / Unlock om audio te starten (browser-blok)'
+				busy: false,
+				error: 'Tik Speel om Spotify te starten'
 			});
 			return;
 		}
 
+		this.set({ busy: true, error: null });
+
 		if (this.status.mode === 'premium' || (opts.uri && this.status.tier === 'premium')) {
 			await this.waitForDevice();
 		}
+		if (seq !== this.playSeq) return;
 
 		if (opts.uri && this.status.deviceId && this.accessToken) {
 			try {
-				if (fromGesture && this.sdkPlayer) {
-					try {
-						await this.sdkPlayer.activateElement?.();
-					} catch {
-						/* ignore */
-					}
-				}
-				await this.transferPlayback();
+				await this.ensureDevice();
+				if (seq !== this.playSeq) return;
 				await this.playPremium(opts.uri, offsetMs);
+				if (seq !== this.playSeq) return;
 				if (durationMs > 0) this.armStop(durationMs);
 				this.unlocked = true;
+				this.pending = null;
 				this.set({
 					mode: 'premium',
 					playing: true,
 					needsGesture: false,
 					unlocked: true,
+					busy: false,
 					error: null
 				});
 				return;
 			} catch (e) {
-				this.set({ error: e instanceof Error ? e.message : 'Premium play failed' });
+				// Device gone / race — reset transfer flag and retry once
+				const msg = e instanceof Error ? e.message : 'Premium play failed';
+				if (/404|NO_ACTIVE|Not found|Device/i.test(msg) && this.transferredOnce) {
+					this.transferredOnce = false;
+					try {
+						await this.ensureDevice();
+						await this.playPremium(opts.uri, offsetMs);
+						if (durationMs > 0) this.armStop(durationMs);
+						this.unlocked = true;
+						this.pending = null;
+						this.set({
+							mode: 'premium',
+							playing: true,
+							needsGesture: false,
+							unlocked: true,
+							busy: false,
+							error: null
+						});
+						return;
+					} catch (e2) {
+						this.set({
+							busy: false,
+							playing: false,
+							needsGesture: true,
+							error: e2 instanceof Error ? e2.message : msg
+						});
+					}
+				} else {
+					this.set({ busy: false, error: msg, needsGesture: fromGesture ? false : true });
+				}
 			}
 		}
 
 		if (opts.previewUrl) {
 			try {
 				await this.playPreview(opts.previewUrl, offsetMs);
-				// Spotify previews max ~30s; still respect shorter clips
+				if (seq !== this.playSeq) return;
 				const previewCap = Math.max(1000, 30_000 - offsetMs);
 				this.armStop(durationMs > 0 ? Math.min(durationMs, previewCap) : previewCap);
 				this.unlocked = true;
+				this.pending = null;
 				this.set({
 					mode: 'preview',
 					playing: true,
 					needsGesture: false,
 					unlocked: true,
+					busy: false,
 					error: null
 				});
 				return;
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : 'Preview play failed';
-				// Autoplay policy → ask for tap, keep pending
 				if (!fromGesture && /NotAllowedError|interact|gesture|user/i.test(msg + String(e))) {
 					this.pending = opts;
-					this.set({ playing: false, needsGesture: true, error: 'Tik Speel om te starten' });
+					this.set({
+						playing: false,
+						needsGesture: true,
+						busy: false,
+						error: 'Tik Speel om te starten'
+					});
 					return;
 				}
-				this.set({ error: msg, needsGesture: true, playing: false });
 				this.pending = opts;
+				this.set({ error: msg, needsGesture: true, playing: false, busy: false });
 				return;
 			}
 		}
 
-		// No silent mock audio — host must have Premium play or preview
 		this.pending = opts;
 		this.set({
 			mode: opts.uri || opts.previewUrl ? this.status.mode : 'none',
 			playing: false,
 			needsGesture: true,
+			busy: false,
 			error: !opts.uri && !opts.previewUrl
 				? 'Geen Spotify-audio op dit nummer — kies een andere playlist'
-				: 'Spotify speelt niet — tik Speel / Unlock of check Premium / preview'
+				: 'Spotify speelt niet — tik Speel of check Premium / preview'
 		});
 	}
 
-	/** Same as unlock + play pending / current — for the visible Play button. */
+	/**
+	 * Single entry for the Play button: arm gesture once, then play opts
+	 * (or flush pending). Does not double-play the same request.
+	 */
 	async playFromUserGesture(opts?: PlayTrackOpts) {
-		await this.unlockAudio();
-		if (opts) {
-			await this.playTrack({ ...opts, fromUserGesture: true });
+		this.armGestureSync();
+		const next = opts ?? this.pending;
+		this.pending = null;
+		if (next) {
+			await this.playTrack({ ...next, fromUserGesture: true });
+			return;
 		}
+		await this.resume();
 	}
 
 	private async playPremium(uri: string, offsetMs: number) {
@@ -374,28 +447,63 @@ export class HostSpotifyPlayer {
 
 	async pause() {
 		this.clearStopTimer();
+		this.set({ busy: true });
 		try {
 			await this.sdkPlayer?.pause();
 		} catch {
 			/* ignore */
 		}
+		if (this.accessToken && this.status.mode === 'premium') {
+			await fetch('https://api.spotify.com/v1/me/player/pause', {
+				method: 'PUT',
+				headers: { Authorization: `Bearer ${this.accessToken}` }
+			}).catch(() => null);
+		}
 		this.audio?.pause();
-		this.set({ playing: false });
+		this.set({ playing: false, busy: false });
 	}
 
 	async resume() {
+		this.set({ busy: true, error: null });
 		try {
 			if (this.status.mode === 'premium') {
-				await this.sdkPlayer?.resume();
-				this.set({ playing: true });
+				try {
+					await this.sdkPlayer?.resume();
+					const state = await this.sdkPlayer?.getCurrentState();
+					if (state && !state.paused) {
+						this.set({ playing: true, busy: false, needsGesture: false });
+						return;
+					}
+				} catch {
+					/* fall through to replay */
+				}
+				// Resume noop / empty queue → re-play last track once
+				if (this.lastOpts?.uri) {
+					await this.playTrack({ ...this.lastOpts, fromUserGesture: true });
+					return;
+				}
+			}
+			if (this.audio?.src && !this.audio.src.startsWith('data:')) {
+				await this.audio.play();
+				this.set({ playing: true, needsGesture: false, busy: false });
 				return;
 			}
-			if (this.audio?.src) {
-				await this.audio.play();
-				this.set({ playing: true, needsGesture: false });
+			if (this.lastOpts) {
+				await this.playTrack({ ...this.lastOpts, fromUserGesture: true });
+				return;
 			}
+			this.set({
+				busy: false,
+				needsGesture: true,
+				error: 'Niets om te hervatten — wacht op een nummer'
+			});
 		} catch {
-			this.set({ needsGesture: true, error: 'Tik Speel om verder te gaan' });
+			this.set({
+				busy: false,
+				needsGesture: true,
+				playing: false,
+				error: 'Tik Speel om verder te gaan'
+			});
 		}
 	}
 
@@ -409,6 +517,20 @@ export class HostSpotifyPlayer {
 		} catch {
 			/* ignore */
 		}
+	}
+
+	/** One-tap play/pause for the main control. */
+	async togglePlay(opts?: PlayTrackOpts) {
+		this.armGestureSync();
+		if (this.status.playing) {
+			await this.pause();
+			return;
+		}
+		if (opts || this.pending || this.lastOpts) {
+			await this.playFromUserGesture(opts ?? this.pending ?? this.lastOpts ?? undefined);
+			return;
+		}
+		await this.resume();
 	}
 
 	private armStop(ms: number) {
