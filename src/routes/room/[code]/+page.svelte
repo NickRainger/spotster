@@ -404,16 +404,7 @@
 			</section>
 		{:else}
 			<!-- GAME -->
-			<section class="anim-enter mt-5 space-y-5">
-				{#if isSingle && seatPlayer && !privacyLocked}
-					<div class="rounded-2xl border border-primary/30 bg-primary/10 px-4 py-2 text-sm">
-						Nu aan zet: <strong class="font-display text-lg">{seatPlayer.name}</strong>
-						{#if phase === 'CHALLENGE_WINDOW'}
-							<span class="text-white/50">— viesjes</span>
-						{/if}
-					</div>
-				{/if}
-
+			<section class="anim-enter mt-5 space-y-6">
 				<HostPlayback
 					isHost={isHost || !!isSingle}
 					{phase}
@@ -437,7 +428,7 @@
 				{/if}
 
 				{#if !privacyLocked && room.turn.lastResolve && (phase === 'RESOLVE' || phase === 'REVEAL' || phase === 'CHECK_WIN')}
-					<div class="rounded-2xl border border-white/10 bg-base-200/70 p-4">
+					<div class="border-l-4 border-accent pl-4">
 						<p class="font-display text-xl">{room.turn.lastResolve.message}</p>
 						<p class="mt-1 text-white/60">
 							{room.turn.lastResolve.title} — {room.turn.lastResolve.artist} ({room.turn.lastResolve
@@ -445,171 +436,208 @@
 						</p>
 					</div>
 				{:else if !privacyLocked && phase === 'REVEAL' && room.turn.track}
-					<div class="rounded-2xl border border-primary/30 bg-primary/10 p-4">
+					<div class="border-l-4 border-primary pl-4">
 						<p class="font-display text-3xl text-accent">{room.turn.track.year}</p>
 						<p class="text-lg font-semibold">{room.turn.track.title}</p>
 						<p class="text-white/60">{room.turn.track.artist}</p>
 					</div>
 				{/if}
 
-				<!-- Active / seat timeline -->
 				{#if !privacyLocked}
-					<div class="rounded-3xl border border-white/10 bg-base-200/40 p-4">
-						<div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-							<h2 class="font-display text-xl">
-								{#if isSingle}
-									Tijdlijn van {seatPlayer?.name ?? activePlayer?.name ?? '…'}
-								{:else if isActiveSeat}
-									Jouw tijdlijn
-								{:else}
-									Tijdlijn van {activePlayer?.name ?? '…'}
-								{/if}
-							</h2>
-							{#if seatPlayer}
-								<span class="badge badge-lg border-0 bg-primary/20 text-primary"
-									>{seatPlayer.tokens} viesje{seatPlayer.tokens === 1 ? '' : 's'}</span
-								>
-							{/if}
-						</div>
+					{@const myBoard = isSingle ? seatPlayer : me}
+					{@const myBoardIsTurn =
+						!!myBoard &&
+						(myBoard.id === room.turn.activePlayerId ||
+							(phase === 'CHALLENGE_WINDOW' && myBoard.id === room.challengeSeatId))}
+					{@const canGuess =
+						!!myBoard &&
+						myBoard.id === room.turn.activePlayerId &&
+						(phase === 'GUESSING' || phase === 'HOST_PLAYING')}
+					{@const canChallenge =
+						phase === 'CHALLENGE_WINDOW' &&
+						!!myBoard &&
+						((isSingle && isChallengeSeat) ||
+							(!isSingle && me != null && me.id !== room.turn.activePlayerId))}
+					{@const others = room.players.filter(
+						(p) => room.turnOrder.includes(p.id) && p.id !== myBoard?.id
+					)}
 
-						{#if (isActiveSeat || (isSingle && seatId === room.turn.activePlayerId)) && (phase === 'GUESSING' || phase === 'HOST_PLAYING')}
-							{@const cards = isSingle
-								? (activePlayer?.timeline ?? [])
-								: (me?.timeline ?? [])}
-							<Timeline
-								cards={cards}
-								interactive
-								selectedSlot={selectedSlot}
-								onSelectSlot={(s) => (selectedSlot = s)}
-							/>
-							<div class="mt-3 flex flex-wrap gap-2">
-								<button class="btn btn-primary" disabled={selectedSlot == null} onclick={lockIn}
-									>Lock in</button
-								>
-								<button
-									class="btn btn-outline"
-									onclick={() =>
-										gameClient.send({ type: 'skip_turn', asPlayerId: asId() })}
-									disabled={(seatPlayer?.tokens ?? 0) < room.settings.skipCost}
-								>
-									Skip (−{room.settings.skipCost})
-								</button>
-							</div>
-						{:else if isActiveSeat || (isSingle && seatId === room.turn.activePlayerId)}
-							<Timeline
-								cards={isSingle ? (activePlayer?.timeline ?? []) : (me?.timeline ?? [])}
-								lockedSlot={room.turn.lockedSlot}
-							/>
-						{:else if activePlayer && !isSingle}
-							<Timeline cards={activePlayer.timeline} lockedSlot={room.turn.lockedSlot} />
-						{/if}
-					</div>
-				{/if}
-
-				<!-- Challenge -->
-				{#if !privacyLocked && phase === 'CHALLENGE_WINDOW'}
-					{#if isChallengeSeat && seatPlayer}
-						<div class="rounded-3xl border border-secondary/30 bg-secondary/10 p-4">
-							<div class="mb-2 flex items-center justify-between">
-								<h2 class="font-display text-xl">Challenge — {seatPlayer.name}</h2>
-								{#if challengeLeft > 0}
-									<span class="font-display text-2xl text-secondary">{challengeLeft}s</span>
-								{/if}
-							</div>
-							<p class="mb-2 text-sm text-white/60">
-								Plaats een viesje op <em>jouw</em> tijdlijn, of sla over. Anderen kijken niet mee.
-							</p>
-							<Timeline
-								cards={seatPlayer.timeline}
-								interactive={seatPlayer.tokens > 0 &&
-									!room.turn.claims.some((c) => c.playerId === seatPlayer.id)}
-								selectedSlot={challengeSlot}
-								claims={room.turn.claims.filter((c) => c.playerId === seatPlayer.id)}
-								playerColors={colorMap}
-								onSelectSlot={(s) => (challengeSlot = s)}
-							/>
-							<div class="mt-3 flex flex-wrap gap-2">
-								<button
-									class="btn btn-secondary"
-									disabled={challengeSlot == null || seatPlayer.tokens < 1}
-									onclick={placeChallenge}>Plaats viesje</button
-								>
-								<button
-									class="btn btn-outline"
-									onclick={() =>
-										gameClient.send({ type: 'skip_challenge', asPlayerId: seatPlayer.id })}
-									>Geen viesje</button
-								>
-							</div>
-						</div>
-					{:else if !isSingle && me && me.id !== room.turn.activePlayerId}
-						<div class="rounded-3xl border border-secondary/30 bg-secondary/10 p-4">
-							<div class="mb-2 flex items-center justify-between">
-								<h2 class="font-display text-xl">Challenge — viesje op jouw slot</h2>
-								{#if challengeLeft > 0}
-									<span class="font-display text-2xl text-secondary">{challengeLeft}s</span>
-								{/if}
-							</div>
-							<Timeline
-								cards={me.timeline}
-								interactive={me.tokens > 0 && !room.turn.claims.some((c) => c.playerId === me.id)}
-								selectedSlot={challengeSlot}
-								claims={room.turn.claims.filter((c) => c.playerId === me.id)}
-								playerColors={colorMap}
-								onSelectSlot={(s) => (challengeSlot = s)}
-							/>
-							<button
-								class="btn btn-secondary mt-3"
-								disabled={challengeSlot == null || me.tokens < 1}
-								onclick={placeChallenge}>Plaats viesje</button
-							>
-						</div>
-					{:else if isSingle}
-						<div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/70">
-							Wachten op challenge-seat…
-						</div>
-					{:else}
-						<div class="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/70">
-							Anderen mogen challengen…
-							{#if challengeLeft > 0}
-								<span class="font-display text-secondary"> {challengeLeft}s</span>
-							{/if}
-						</div>
-					{/if}
-				{/if}
-
-				<!-- Player strip: public scores; dim private timelines in single -->
-				{#if !privacyLocked}
-					<div class="grid gap-3 sm:grid-cols-2">
-						{#each room.players as p}
-							{#if room.turnOrder.includes(p.id)}
-								<div
-									class="rounded-2xl border px-3 py-3
-									{p.id === room.turn.activePlayerId
-										? 'border-primary/50 bg-primary/10'
-										: 'border-white/10 bg-base-200/30'}"
-								>
-									<div class="mb-1 flex items-center gap-2">
-										<span class="h-2.5 w-2.5 rounded-full" style="background:{p.color}"></span>
-										<span class="font-semibold">{p.name}</span>
-										<span class="text-xs text-white/40"
-											>{p.timeline.length}/{room.settings.winAt}</span
-										>
-										<span class="ml-auto text-xs text-primary">{p.tokens}◆</span>
-									</div>
-									{#if showAllTimelines || p.id === seatId || p.id === room.turn.activePlayerId}
-										<Timeline
-											cards={p.timeline}
-											claims={room.turn.claims.filter((c) => c.playerId === p.id)}
-											playerColors={colorMap}
-										/>
-									{:else}
-										<p class="py-4 text-center text-xs text-white/35">verborgen · privacy</p>
-									{/if}
+					<!-- JOUW BORD — altijd de primaire focus -->
+					{#if myBoard}
+						<section
+							class="relative space-y-3 border-y-2 py-5"
+							style="border-color:{myBoard.color}"
+							aria-label="Jouw bord"
+						>
+							<div class="flex flex-wrap items-end justify-between gap-3">
+								<div>
+									<p
+										class="text-xs font-semibold uppercase tracking-[0.3em]"
+										style="color:{myBoard.color}"
+									>
+										Jouw bord
+									</p>
+									<h2 class="font-display text-3xl sm:text-4xl">{myBoard.name}</h2>
+									<p class="text-sm text-white/45">
+										{myBoard.timeline.length}/{room.settings.winAt} kaarten
+										{#if myBoardIsTurn}
+											· <span class="text-primary">jij bent aan de beurt</span>
+										{/if}
+									</p>
 								</div>
+								<span
+									class="rounded-full px-3 py-1 text-sm font-semibold"
+									style="background:{myBoard.color}33;color:{myBoard.color}"
+								>
+									{myBoard.tokens} viesje{myBoard.tokens === 1 ? '' : 's'}
+								</span>
+							</div>
+
+							<Timeline
+								cards={myBoard.timeline}
+								interactive={canGuess ||
+									(canChallenge &&
+										myBoard.tokens > 0 &&
+										!room.turn.claims.some((c) => c.playerId === myBoard.id))}
+								selectedSlot={canGuess
+									? selectedSlot
+									: canChallenge
+										? challengeSlot
+										: null}
+								lockedSlot={myBoard.id === room.turn.activePlayerId
+									? room.turn.lockedSlot
+									: null}
+								claims={room.turn.claims.filter((c) => c.playerId === myBoard.id)}
+								playerColors={colorMap}
+								onSelectSlot={(s) => {
+									if (canGuess) selectedSlot = s;
+									else if (canChallenge) challengeSlot = s;
+								}}
+							/>
+
+							{#if canGuess}
+								<div class="flex flex-wrap gap-2">
+									<button class="btn btn-primary" disabled={selectedSlot == null} onclick={lockIn}
+										>Lock in op jouw bord</button
+									>
+									<button
+										class="btn btn-outline"
+										onclick={() => gameClient.send({ type: 'skip_turn', asPlayerId: asId() })}
+										disabled={myBoard.tokens < room.settings.skipCost}
+									>
+										Skip (−{room.settings.skipCost})
+									</button>
+								</div>
+							{:else if canChallenge}
+								<div class="space-y-2">
+									<div class="flex flex-wrap items-center justify-between gap-2">
+										<p class="text-sm text-white/60">
+											Challenge: viesje op <em>jouw</em> bord
+										</p>
+										{#if challengeLeft > 0}
+											<span class="font-display text-2xl text-secondary">{challengeLeft}s</span>
+										{/if}
+									</div>
+									<div class="flex flex-wrap gap-2">
+										<button
+											class="btn btn-secondary"
+											disabled={challengeSlot == null || myBoard.tokens < 1}
+											onclick={placeChallenge}>Plaats viesje</button
+										>
+										{#if isSingle}
+											<button
+												class="btn btn-outline"
+												onclick={() =>
+													gameClient.send({
+														type: 'skip_challenge',
+														asPlayerId: myBoard.id
+													})}>Geen viesje</button
+											>
+										{/if}
+									</div>
+								</div>
+							{:else if phase === 'CHALLENGE_WINDOW' && !isSingle && me?.id === room.turn.activePlayerId}
+								<p class="text-sm text-white/50">
+									Jouw lock staat — anderen mogen challengen
+									{#if challengeLeft > 0}
+										<span class="font-display text-secondary"> · {challengeLeft}s</span>
+									{/if}
+								</p>
 							{/if}
-						{/each}
-					</div>
+						</section>
+					{/if}
+
+					<!-- Beurt van iemand anders (alleen ter referentie, niet jouw bord) -->
+					{#if !isSingle && activePlayer && me && activePlayer.id !== me.id && (phase === 'HOST_PLAYING' || phase === 'GUESSING' || phase === 'GUESS_LOCKED')}
+						<section class="opacity-70" aria-label="Bord van actieve speler">
+							<p class="mb-1 text-xs font-semibold uppercase tracking-[0.25em] text-white/35">
+								Nu aan zet · niet jouw bord
+							</p>
+							<div class="mb-2 flex items-center gap-2">
+								<span class="h-2.5 w-2.5 rounded-full" style="background:{activePlayer.color}"
+								></span>
+								<h3 class="font-display text-xl text-white/70">{activePlayer.name}</h3>
+								<span class="text-xs text-white/35"
+									>{activePlayer.timeline.length}/{room.settings.winAt}</span
+								>
+							</div>
+							<Timeline
+								cards={activePlayer.timeline}
+								lockedSlot={room.turn.lockedSlot}
+								dimYears
+							/>
+						</section>
+					{/if}
+
+					{#if phase === 'CHALLENGE_WINDOW' && isSingle && !isChallengeSeat}
+						<p class="text-sm text-white/50">Wachten op challenge-seat…</p>
+					{/if}
+
+					<!-- Andere spelers — secundair -->
+					{#if others.length}
+						<section class="space-y-3 pt-2" aria-label="Andere spelers">
+							<p class="text-xs font-semibold uppercase tracking-[0.3em] text-white/35">
+								Andere spelers
+							</p>
+							<div class="grid gap-4 sm:grid-cols-2">
+								{#each others as p}
+									<div
+										class="border-l-2 pl-3 {p.id === room.turn.activePlayerId
+											? 'border-white/40'
+											: 'border-white/15'}"
+										style={p.id === room.turn.activePlayerId
+											? `border-color:${p.color}`
+											: undefined}
+									>
+										<div class="mb-1 flex items-center gap-2">
+											<span class="h-2 w-2 rounded-full" style="background:{p.color}"></span>
+											<span class="text-sm font-semibold text-white/75">{p.name}</span>
+											{#if p.id === room.turn.activePlayerId}
+												<span class="text-[10px] uppercase tracking-wider text-primary"
+													>beurt</span
+												>
+											{/if}
+											<span class="ml-auto text-xs text-white/35"
+												>{p.timeline.length}/{room.settings.winAt} · {p.tokens}◆</span
+											>
+										</div>
+										{#if showAllTimelines || p.id === room.turn.activePlayerId}
+											<div class="scale-[0.92] origin-left opacity-80">
+												<Timeline
+													cards={p.timeline}
+													claims={room.turn.claims.filter((c) => c.playerId === p.id)}
+													playerColors={colorMap}
+													dimYears={p.id !== room.turn.activePlayerId}
+												/>
+											</div>
+										{:else}
+											<p class="py-3 text-xs text-white/30">verborgen · privacy</p>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</section>
+					{/if}
 				{/if}
 
 				{#if !privacyLocked}
