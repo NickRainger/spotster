@@ -23,6 +23,7 @@
 		tracksTotal: number;
 		image: string | null;
 		owner?: string;
+		kind?: 'liked' | 'owned' | 'followed' | 'search';
 		canLoadTracks?: boolean;
 	};
 
@@ -62,16 +63,11 @@
 
 	const filteredPlaylists = $derived.by(() => {
 		const q = playlistQuery.trim().toLowerCase();
-		const base = playlists.filter((p) => p.canLoadTracks !== false);
-		const followed = playlists.filter((p) => p.canLoadTracks === false);
-		const pool = q
-			? playlists.filter(
-					(p) =>
-						p.name.toLowerCase().includes(q) ||
-						(p.owner ?? '').toLowerCase().includes(q)
-				)
-			: [...base, ...followed];
-		return pool;
+		if (!q) return playlists;
+		return playlists.filter(
+			(p) =>
+				p.name.toLowerCase().includes(q) || (p.owner ?? '').toLowerCase().includes(q)
+		);
 	});
 
 	async function refreshSession() {
@@ -106,18 +102,23 @@
 		}
 	}
 
-	async function selectPlaylist(id: string, name: string, canLoad = true) {
-		if (!canLoad && id !== 'liked') {
-			error =
-				'Spotify geeft geen tracks van playlists die je niet bezit. Kies Liked Songs of een lijst van jou (geen gevolgd/zoekresultaat).';
-			return;
-		}
+	async function selectPlaylist(id: string, name: string, _kind?: PlaylistRow['kind']) {
 		loading = true;
 		error = null;
 		try {
 			const res = await fetch(`/api/spotify/playlist/${encodeURIComponent(id)}`);
 			const body = await res.json();
-			if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+			if (!res.ok || body.error) {
+				const msg = body.error || `HTTP ${res.status}`;
+				if (res.status === 403) {
+					throw new Error(
+						typeof msg === 'string' && msg.includes('403')
+							? msg
+							: 'Spotify deelt tracks van deze (gevolgde) lijst niet. Workaround: in Spotify “Maak een kopie”, kies daarna die kopie hier — of Liked Songs / een eigen lijst.'
+					);
+				}
+				throw new Error(msg);
+			}
 			const tracks: Track[] = (body.tracks ?? [])
 				.filter((t: { year: number | null }) => t.year)
 				.map(
@@ -264,12 +265,12 @@
 		error = null;
 	}
 
-	async function onPlaylistClick(id: string, name: string, loadable: boolean) {
+	async function onPlaylistClick(id: string, name: string, kind?: PlaylistRow['kind']) {
 		if (activePlaylistId === id && spotify.source === 'spotify') {
 			deselectPlaylist();
 			return;
 		}
-		await selectPlaylist(id, name, loadable);
+		await selectPlaylist(id, name, kind);
 	}
 
 	$effect(() => {
@@ -333,9 +334,10 @@
 			>
 		</div>
 		<p class="text-xs text-white/40">
-			Tracks laden alleen van <strong class="text-white/60">Liked Songs</strong> en playlists die jij
-			bezit. Echte Spotify-audio start bij <strong class="text-white/60">Start spel</strong> (Premium =
-			volledig nummer, Free = preview). Klik eerst <strong class="text-white/60">Unlock audio</strong>.
+			Kies Liked Songs, een <strong class="text-white/60">eigen</strong> lijst, of een opgeslagen/gevolgde
+			lijst (we proberen te laden). Spotify blokkeert tracks van veel gevolgde lijsten — dan: in Spotify
+			een <strong class="text-white/60">kopie</strong> maken. Audio start bij
+			<strong class="text-white/60"> Start spel</strong>.
 		</p>
 	{/if}
 
@@ -385,7 +387,9 @@
 			{/if}
 			<ul class="max-h-64 space-y-1.5 overflow-y-auto">
 				{#each playlistHits.length ? playlistHits : filteredPlaylists as p (p.id + p.name)}
-					{@const loadable = p.id === 'liked' || p.canLoadTracks !== false}
+					{@const kind =
+						p.kind ??
+						(p.id === 'liked' ? 'liked' : p.canLoadTracks === false ? 'followed' : 'owned')}
 					{@const selected = activePlaylistId === p.id && spotify.source === 'spotify'}
 					<li>
 						<button
@@ -394,11 +398,9 @@
 							class="flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:opacity-50
 								{selected
 								? 'border-primary bg-primary/20 ring-2 ring-primary/50'
-								: loadable
-									? 'border-white/10 bg-white/5 hover:border-primary/40'
-									: 'border-white/5 bg-white/[0.03] opacity-70'}"
+								: 'border-white/10 bg-white/5 hover:border-primary/40'}"
 							disabled={disabled || loading}
-							onclick={() => onPlaylistClick(p.id, p.name, loadable)}
+							onclick={() => onPlaylistClick(p.id, p.name, kind)}
 						>
 							{#if p.image}
 								<img
@@ -418,16 +420,22 @@
 								</div>
 							{/if}
 							<span class="min-w-0 flex-1">
-								<span class="flex items-center gap-2">
+								<span class="flex flex-wrap items-center gap-2">
 									<span class="truncate font-medium">{p.name}</span>
 									{#if selected}
 										<span class="badge badge-primary badge-xs shrink-0">actief</span>
+									{:else if kind === 'followed'}
+										<span class="badge badge-ghost badge-xs shrink-0 opacity-70">opgeslagen</span>
+									{:else if kind === 'owned'}
+										<span class="badge badge-ghost badge-xs shrink-0 opacity-70">van jou</span>
+									{:else if kind === 'search'}
+										<span class="badge badge-ghost badge-xs shrink-0 opacity-70">zoek</span>
 									{/if}
 								</span>
 								<span class="block truncate text-xs text-white/40">
 									{p.owner ? `${p.owner} · ` : ''}{p.tracksTotal || '—'} tracks
-									{#if !loadable}
-										· alleen metadata (geen tracks)
+									{#if kind === 'followed' || kind === 'search'}
+										· laden kan door Spotify geblokkeerd worden
 									{/if}
 								</span>
 							</span>

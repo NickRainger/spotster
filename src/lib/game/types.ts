@@ -142,6 +142,7 @@ export type ClientMessage =
 	| { type: 'update_settings'; settings: Partial<GameSettings> }
 	| { type: 'reorder'; playerIds: string[] }
 	| { type: 'kick'; playerId: string }
+	| { type: 'transfer_host'; playerId: string }
 	| { type: 'leave' }
 	| { type: 'start' }
 	| { type: 'lock_slot'; slotIndex: number; asPlayerId?: string }
@@ -176,5 +177,6 @@ export type ClientMessage =
 export type ServerMessage =
 	| { type: 'room'; room: RoomPublic; you: { playerId: string; sessionToken: string } }
 	| { type: 'error'; message: string }
+	| { type: 'notice'; message: string }
 	| { type: 'pong' }
 	| { type: 'kicked'; reason: string };

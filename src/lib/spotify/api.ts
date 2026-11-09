@@ -11,7 +11,12 @@ export interface SpotifyPlaylistSummary {
 	image: string | null;
 	tracksTotal: number;
 	owner: string;
-	/** Spotify only returns playlist items for owner/collaborator playlists. */
+	/**
+	 * Hint for UI: owned/liked usually load; followed often 403 under Spotify
+	 * Development Mode. Always try the tracks endpoint on select — don't hard-block.
+	 */
+	kind: 'liked' | 'owned' | 'followed' | 'search';
+	/** @deprecated prefer `kind`; kept for older clients */
 	canLoadTracks: boolean;
 }
 
@@ -234,6 +239,7 @@ export async function listPlaylists(accessToken: string): Promise<SpotifyPlaylis
 			image: null,
 			tracksTotal: 0,
 			owner: 'Jij',
+			kind: 'liked',
 			canLoadTracks: true
 		}
 	];
@@ -249,23 +255,27 @@ export async function listPlaylists(accessToken: string): Promise<SpotifyPlaylis
 		const pageData: PlaylistPage = await apiGet<PlaylistPage>(accessToken, toApiPath(url));
 		for (const p of pageData.items ?? []) {
 			if (!p?.id) continue;
-			const owned = !!myId && p.owner?.id === myId;
+			// If profile id missing, assume owned so we still attempt track fetch
+			const owned = !myId || p.owner?.id === myId;
 			out.push({
 				id: p.id,
 				name: p.name,
 				image: p.images?.[0]?.url ?? null,
 				tracksTotal: p.tracks?.total ?? p.items?.total ?? 0,
 				owner: p.owner?.display_name ?? '',
-				// Spotify 403's /items+/tracks unless you own (or truly collaborate — not detectable here)
-				canLoadTracks: owned
+				kind: owned ? 'owned' : 'followed',
+				// Always selectable — Spotify may still 403 followed lists; we probe on click
+				canLoadTracks: true
 			});
 		}
 		url = pageData.next ? toApiPath(pageData.next) : null;
 		if (out.length > 200) break;
 	}
 
-	// Owned / loadable first, then followed (Spotify 403's tracks on those)
-	return out.sort((a, b) => Number(b.canLoadTracks) - Number(a.canLoadTracks));
+	// Liked + owned first, then followed (library / “opgeslagen”)
+	const rank = (k: SpotifyPlaylistSummary['kind']) =>
+		k === 'liked' ? 2 : k === 'owned' ? 1 : 0;
+	return out.sort((a, b) => rank(b.kind) - rank(a.kind) || a.name.localeCompare(b.name));
 }
 
 async function fetchTracksPage(
@@ -336,7 +346,7 @@ export async function getPlaylistTracks(
 		}
 	}
 	const err = new Error(
-		'Spotify blokkeert tracks van deze playlist (403). Alleen playlists die jij bezit of co-edit werken — kies Liked Songs of een eigen lijst.'
+		'Spotify deelt tracks van deze lijst niet via de API (403) — typisch bij gevolgde/opgeslagen lijsten van anderen. Workaround: in Spotify de playlist openen → “Maak een kopie” / “Add to your profile”, daarna hier die kopie kiezen. Of kies Liked Songs / een lijst die jij bezit.'
 	) as Error & { status?: number };
 	err.status = 403;
 	throw err;
@@ -372,7 +382,8 @@ export async function searchPlaylists(
 			image: p.images?.[0]?.url ?? null,
 			tracksTotal: p.tracks?.total ?? 0,
 			owner: p.owner?.display_name ?? '',
-			// Search hits are almost never owned → tracks endpoint 403's
-			canLoadTracks: false
+			kind: 'search' as const,
+			// Try on select — search hits often 403, but we don't pre-block
+			canLoadTracks: true
 		}));
 }

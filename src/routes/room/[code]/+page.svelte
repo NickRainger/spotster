@@ -29,6 +29,7 @@
 		room: null as import('#lib/game/types').RoomPublic | null,
 		playerId: null as string | null,
 		error: null as string | null,
+		notice: null as string | null,
 		lastKicked: null as string | null
 	});
 
@@ -87,6 +88,7 @@
 				room: s.room,
 				playerId: s.playerId,
 				error: s.error,
+				notice: s.notice,
 				lastKicked: s.lastKicked
 			};
 			if (s.room && s.room.code === code) {
@@ -294,6 +296,12 @@
 				<button class="btn btn-ghost btn-xs" onclick={() => gameClient.clearError()}>ok</button>
 			</div>
 		{/if}
+		{#if snap.notice}
+			<div class="alert alert-info mt-3 text-sm" role="status">
+				<span>{snap.notice}</span>
+				<button class="btn btn-ghost btn-xs" onclick={() => gameClient.clearNotice()}>ok</button>
+			</div>
+		{/if}
 
 		{#if !inGame}
 			<section class="anim-enter mt-4 grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start lg:gap-5">
@@ -348,6 +356,14 @@
 														disabled={idx === room.turnOrder.length - 1}>↓</button
 													>
 													{#if !p.isHost}
+														<button
+															class="btn btn-ghost btn-xs text-secondary"
+															type="button"
+															onclick={() =>
+																gameClient.send({ type: 'transfer_host', playerId: p.id })}
+															title="Maak deze speler host / DJ"
+															>host</button
+														>
 														<button
 															class="btn btn-ghost btn-xs text-error"
 															onclick={() => gameClient.send({ type: 'kick', playerId: p.id })}
@@ -684,7 +700,6 @@
 									lockedSlot={room.turn.lockedSlot}
 									claims={room.turn.claims}
 									playerColors={colorMap}
-									dimYears
 								/>
 							</div>
 						</section>
@@ -745,7 +760,6 @@
 											<div class="min-w-0 grayscale">
 												<Timeline
 													cards={p.timeline}
-													dimYears
 													insertTrackId={room.turn.lastResolve?.stolenBy === p.id
 														? insertId
 														: null}
@@ -833,6 +847,31 @@
 					{/if}
 
 					{#if isHost}
+						<div class="game-section min-w-0 space-y-3">
+							<h2 class="game-h">
+								Host overdragen
+								<span class="game-h-sub">Spotify-login blijft op oude host-browser</span>
+							</h2>
+							<p class="text-sm text-white/55">
+								Nieuwe host krijgt DJ/settings. Die moet zelf Connect Spotify doen op hun toestel.
+							</p>
+							<div class="flex flex-col gap-2">
+								{#each room.players.filter((p) => !p.isHost) as p}
+									<button
+										type="button"
+										class="btn btn-outline btn-md min-h-11 w-full justify-between"
+										onclick={() => gameClient.send({ type: 'transfer_host', playerId: p.id })}
+									>
+										<span class="flex items-center gap-2">
+											<span class="h-2.5 w-2.5 rounded-full" style="background:{p.color}"></span>
+											{p.name}
+										</span>
+										<span class="text-sm text-secondary">Maak host</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+
 						<details class="game-section min-w-0">
 							<summary class="game-h cursor-pointer select-none">
 								Settings mid-game

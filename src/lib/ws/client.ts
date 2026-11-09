@@ -16,6 +16,8 @@ export interface GameClientState {
 	playerId: string | null;
 	sessionToken: string | null;
 	error: string | null;
+	/** Soft info (host transfer, etc.) — not a hard error */
+	notice: string | null;
 	lastKicked: string | null;
 }
 
@@ -61,6 +63,7 @@ export class GameClient {
 		playerId: null,
 		sessionToken: null,
 		error: null,
+		notice: null,
 		lastKicked: null
 	});
 
@@ -109,14 +112,17 @@ export class GameClient {
 					sessionToken: msg.you.sessionToken,
 					name
 				});
-				this.state.set({
+				this.state.update((s) => ({
+					...s,
 					connected: true,
 					room: msg.room,
 					playerId: msg.you.playerId,
 					sessionToken: msg.you.sessionToken,
 					error: null,
 					lastKicked: null
-				});
+				}));
+			} else if (msg.type === 'notice') {
+				this.state.update((s) => ({ ...s, notice: msg.message }));
 			} else if (msg.type === 'error') {
 				const stale =
 					/room niet gevonden/i.test(msg.message) ||
@@ -174,6 +180,10 @@ export class GameClient {
 
 	clearError() {
 		this.state.update((s) => ({ ...s, error: null }));
+	}
+
+	clearNotice() {
+		this.state.update((s) => ({ ...s, notice: null }));
 	}
 }
 

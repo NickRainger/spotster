@@ -10,6 +10,7 @@
 		claims?: ChallengeClaim[];
 		playerColors?: Record<string, string>;
 		onSelectSlot?: (slot: number) => void;
+		/** @deprecated Years are always visible (HIT-13). Kept for call-site compat. */
 		dimYears?: boolean;
 		/** Challenge mode: block locked + already-claimed slots (Hitster rule). */
 		challengePick?: boolean;
@@ -25,7 +26,7 @@
 		claims = [],
 		playerColors = {},
 		onSelectSlot,
-		dimYears = false,
+		dimYears: _dimYears = false,
 		challengePick = false,
 		insertTrackId = null
 	}: Props = $props();
@@ -179,12 +180,8 @@
 						{isInsert ? 'card-insert ring-2 ring-success/70' : ''}"
 					style="animation-delay: {isInsert ? '0ms' : `${Math.min(slot, 8) * 30}ms`}"
 				>
-					<p
-						class="font-display text-2xl leading-none text-accent {dimYears
-							? 'blur-sm select-none'
-							: ''}"
-					>
-						{card.revealed ? card.year : '????'}
+					<p class="font-display text-2xl leading-none text-accent">
+						{card.year}
 					</p>
 					<div class="mt-2">
 						<p class="line-clamp-2 text-sm font-semibold leading-tight">{card.title}</p>

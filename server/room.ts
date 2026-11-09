@@ -160,6 +160,9 @@ export class Room {
 				case 'kick':
 					this.kick(conn, msg.playerId);
 					break;
+				case 'transfer_host':
+					this.transferHost(conn, msg.playerId);
+					break;
 				case 'leave':
 					this.leave(conn);
 					break;
@@ -386,13 +389,48 @@ export class Room {
 		}
 	}
 
+	private transferHost(conn: Conn, playerId: string) {
+		const host = this.requireHost(conn);
+		if (playerId === host.id) throw new Error('Je bent al host');
+		const next = this.players.find((p) => p.id === playerId);
+		if (!next) throw new Error('Speler niet gevonden');
+		if (!next.connected && this.playMode === 'multi') {
+			throw new Error('Die speler is offline — kies iemand die connected is');
+		}
+		for (const p of this.players) p.isHost = p.id === next.id;
+		this.deviceOwnerId = next.id;
+		this.broadcast();
+		// Spotify OAuth cookies live in the old host browser — new host must Connect Spotify.
+		this.sendTo(next.id, {
+			type: 'notice',
+			message:
+				`Jij bent nu host. DJ-knoppen/settings zijn van jou. Spotify-login hangt nog aan ${host.name}'s browser — verbind Spotify opnieuw op dit toestel om te DJ'en.`
+		});
+		this.sendTo(host.id, {
+			type: 'notice',
+			message:
+				`Host overgedragen aan ${next.name}. Jouw Spotify-sessie blijft op dit toestel tot je disconnect; nieuwe host moet zelf Connect Spotify doen.`
+		});
+		for (const c of this.conns) {
+			if (c.playerId && c.playerId !== next.id && c.playerId !== host.id) {
+				c.send({
+					type: 'notice',
+					message: `${next.name} is nu host (was ${host.name}).`
+				});
+			}
+		}
+	}
+
 	private leave(conn: Conn) {
 		const p = this.requirePlayer(conn);
 		if (p.isHost) {
 			// Transfer host to next connected player
-			const next = this.players.find((x) => x.id !== p.id);
+			const next =
+				this.players.find((x) => x.id !== p.id && x.connected) ??
+				this.players.find((x) => x.id !== p.id);
 			if (next) {
-				next.isHost = true;
+				for (const x of this.players) x.isHost = x.id === next.id;
+				this.deviceOwnerId = next.id;
 			}
 		}
 		this.players = this.players.filter((x) => x.id !== p.id);

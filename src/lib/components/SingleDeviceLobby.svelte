@@ -39,6 +39,14 @@
 					</span>
 					{#if !p.isHost}
 						<button
+							class="btn btn-ghost btn-xs text-secondary"
+							disabled={disabled}
+							type="button"
+							title="Maak host (Spotify blijft op dit toestel)"
+							onclick={() => gameClient.send({ type: 'transfer_host', playerId: p.id })}
+							>host</button
+						>
+						<button
 							class="btn btn-ghost btn-xs text-error"
 							disabled={disabled}
 							onclick={() => gameClient.send({ type: 'remove_local_player', playerId: p.id })}
