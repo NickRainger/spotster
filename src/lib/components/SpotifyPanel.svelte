@@ -17,31 +17,51 @@
 		deckRemaining: number;
 	}
 
+	type PlaylistRow = {
+		id: string;
+		name: string;
+		tracksTotal: number;
+		image: string | null;
+		owner?: string;
+	};
+
+	type TrackHit = {
+		id: string;
+		uri: string;
+		name: string;
+		artists: string[];
+		year: number | null;
+		previewUrl: string | null;
+		image?: string | null;
+	};
+
 	let { roomCode, disabled = false, spotify, deckRemaining }: Props = $props();
 
 	let configured = $state(true);
 	let connected = $state(false);
 	let tier = $state<'premium' | 'free' | 'unknown'>('unknown');
 	let displayName = $state<string | null>(null);
-	let playlists = $state<{ id: string; name: string; tracksTotal: number; image: string | null }[]>(
-		[]
-	);
+	let playlists = $state<PlaylistRow[]>([]);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let searchQ = $state('');
-	let searchHits = $state<
-		{
-			id: string;
-			uri: string;
-			name: string;
-			artists: string[];
-			year: number | null;
-			previewUrl: string | null;
-		}[]
-	>([]);
+	let playlistQuery = $state('');
+	let trackQuery = $state('');
+	let playlistHits = $state<PlaylistRow[]>([]);
+	let searchHits = $state<TrackHit[]>([]);
 	let yearEdits = $state<Record<string, string>>({});
 	let loadedTracks = $state<Track[]>([]);
 	let showOverrides = $state(false);
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const filteredPlaylists = $derived.by(() => {
+		const q = playlistQuery.trim().toLowerCase();
+		if (!q) return playlists;
+		return playlists.filter(
+			(p) =>
+				p.name.toLowerCase().includes(q) ||
+				(p.owner ?? '').toLowerCase().includes(q)
+		);
+	});
 
 	async function refreshSession() {
 		const s = await fetch('/api/spotify/session').then((r) => r.json());
@@ -79,11 +99,10 @@
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(`/api/spotify/playlist/${encodeURIComponent(id)}`).then((r) =>
-				r.json()
-			);
-			if (res.error) throw new Error(res.error);
-			const tracks: Track[] = (res.tracks ?? [])
+			const res = await fetch(`/api/spotify/playlist/${encodeURIComponent(id)}`);
+			const body = await res.json();
+			if (!res.ok || body.error) throw new Error(body.error || `HTTP ${res.status}`);
+			const tracks: Track[] = (body.tracks ?? [])
 				.filter((t: { year: number | null }) => t.year)
 				.map(
 					(
@@ -131,14 +150,42 @@
 		}
 	}
 
-	async function runSearch() {
-		if (searchQ.trim().length < 2) return;
+	async function runPlaylistSearch() {
+		const q = playlistQuery.trim();
+		if (q.length < 2) {
+			playlistHits = [];
+			return;
+		}
 		loading = true;
 		error = null;
 		try {
-			const res = await fetch(`/api/spotify/search?q=${encodeURIComponent(searchQ)}`).then((r) =>
-				r.json()
-			);
+			const res = await fetch(
+				`/api/spotify/search?type=playlist&q=${encodeURIComponent(q)}`
+			).then((r) => r.json());
+			if (res.error) throw new Error(res.error);
+			playlistHits = res.playlists ?? [];
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Playlist zoeken mislukt';
+		} finally {
+			loading = false;
+		}
+	}
+
+	function onPlaylistQueryInput() {
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => {
+			void runPlaylistSearch();
+		}, 350);
+	}
+
+	async function runSearch() {
+		if (trackQuery.trim().length < 2) return;
+		loading = true;
+		error = null;
+		try {
+			const res = await fetch(
+				`/api/spotify/search?type=track&q=${encodeURIComponent(trackQuery)}`
+			).then((r) => r.json());
 			if (res.error) throw new Error(res.error);
 			searchHits = res.tracks ?? [];
 		} catch (e) {
@@ -148,7 +195,7 @@
 		}
 	}
 
-	function addSearchTrack(t: (typeof searchHits)[0]) {
+	function addSearchTrack(t: TrackHit) {
 		if (!t.year) {
 			error = 'Geen releasejaar op deze track';
 			return;
@@ -161,6 +208,7 @@
 			spotifyYear: t.year,
 			spotifyUri: t.uri,
 			previewUrl: t.previewUrl,
+			imageUrl: t.image ?? null,
 			mockColor: '#2dd4bf'
 		};
 		const next = [...loadedTracks.filter((x) => x.id !== track.id), track];
@@ -220,10 +268,8 @@
 				Zet in <code class="text-accent">.env</code>:
 				<code class="text-accent">SPOTIFY_CLIENT_ID</code>, optioneel
 				<code class="text-accent">SPOTIFY_CLIENT_SECRET</code>, en
-				<code class="text-accent">SPOTIFY_REDIRECT_URI</code>
-				(= <code class="text-xs">http://localhost:5173/api/spotify/callback</code>).
+				<code class="text-accent">SPOTIFY_REDIRECT_URI</code>.
 			</p>
-			<p class="mt-2 text-white/50">Zonder secrets speel je door met het mock-deck.</p>
 		</div>
 	{:else if !connected}
 		<a
@@ -254,52 +300,107 @@
 	{/if}
 
 	{#if error}
-		<p class="text-sm text-error">{error}</p>
+		<p class="text-sm text-error whitespace-pre-wrap">{error}</p>
 	{/if}
 
 	{#if connected}
+		<div class="space-y-2">
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+				Zoek playlist
+			</p>
+			<input
+				class="input input-bordered w-full"
+				placeholder="Zoek in jouw lijst of op Spotify…"
+				bind:value={playlistQuery}
+				disabled={disabled}
+				oninput={onPlaylistQueryInput}
+				onkeydown={(e) => e.key === 'Enter' && runPlaylistSearch()}
+			/>
+		</div>
+
 		<div>
-			<p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/40">Jouw playlists</p>
-			{#if loading && !playlists.length}
+			<p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+				{playlistHits.length ? 'Zoekresultaten' : 'Opgeslagen playlists'}
+			</p>
+			{#if loading && !playlists.length && !playlistHits.length}
 				<span class="loading loading-spinner loading-sm text-primary"></span>
 			{/if}
-			<ul class="max-h-48 space-y-1 overflow-y-auto">
-				{#each playlists as p}
+			<ul class="max-h-64 space-y-1.5 overflow-y-auto">
+				{#each playlistHits.length ? playlistHits : filteredPlaylists as p (p.id + p.name)}
 					<li>
 						<button
 							type="button"
-							class="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left hover:border-primary/40"
+							class="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 text-left hover:border-primary/40 disabled:opacity-50"
 							disabled={disabled || loading}
 							onclick={() => selectPlaylist(p.id, p.name)}
 						>
-							<span class="truncate font-medium">{p.name}</span>
-							<span class="text-xs text-white/40">{p.tracksTotal}</span>
+							{#if p.image}
+								<img
+									src={p.image}
+									alt=""
+									class="h-12 w-12 shrink-0 rounded-lg object-cover"
+									loading="lazy"
+								/>
+							{:else}
+								<div
+									class="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-secondary/20 text-xs font-bold text-secondary"
+								>
+									{p.id === 'liked' ? '♥' : p.name.slice(0, 1)}
+								</div>
+							{/if}
+							<span class="min-w-0 flex-1">
+								<span class="block truncate font-medium">{p.name}</span>
+								<span class="block truncate text-xs text-white/40">
+									{p.owner ? `${p.owner} · ` : ''}{p.tracksTotal || '—'} tracks
+								</span>
+							</span>
 						</button>
 					</li>
+				{:else}
+					<li class="px-1 text-sm text-white/40">Geen playlists gevonden</li>
 				{/each}
 			</ul>
 		</div>
 
-		<div class="flex gap-2">
-			<input
-				class="input input-bordered flex-1"
-				placeholder="Zoek track…"
-				bind:value={searchQ}
-				disabled={disabled}
-				onkeydown={(e) => e.key === 'Enter' && runSearch()}
-			/>
-			<button class="btn btn-outline" disabled={disabled || loading} onclick={runSearch}>Zoek</button>
+		<div class="space-y-2">
+			<p class="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">Zoek track</p>
+			<div class="flex gap-2">
+				<input
+					class="input input-bordered flex-1"
+					placeholder="Artiest of titel…"
+					bind:value={trackQuery}
+					disabled={disabled}
+					onkeydown={(e) => e.key === 'Enter' && runSearch()}
+				/>
+				<button class="btn btn-outline" disabled={disabled || loading} onclick={runSearch}
+					>Zoek</button
+				>
+			</div>
 		</div>
 		{#if searchHits.length}
-			<ul class="max-h-36 space-y-1 overflow-y-auto text-sm">
+			<ul class="max-h-48 space-y-1.5 overflow-y-auto">
 				{#each searchHits as t}
-					<li class="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-2 py-1">
-						<span class="truncate"
-							>{t.name}
-							<span class="text-white/40">· {t.artists.join(', ')} · {t.year ?? '?'}</span></span
-						>
+					<li
+						class="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2"
+					>
+						{#if t.image}
+							<img
+								src={t.image}
+								alt=""
+								class="h-11 w-11 shrink-0 rounded-md object-cover"
+								loading="lazy"
+							/>
+						{:else}
+							<div class="h-11 w-11 shrink-0 rounded-md bg-white/10"></div>
+						{/if}
+						<span class="min-w-0 flex-1">
+							<span class="block truncate text-sm font-medium">{t.name}</span>
+							<span class="block truncate text-xs text-white/40"
+								>{t.artists.join(', ')} · {t.year ?? '?'}</span
+							>
+						</span>
 						<button
-							class="btn btn-ghost btn-xs"
+							class="btn btn-ghost btn-sm"
 							disabled={disabled || !t.year}
 							onclick={() => addSearchTrack(t)}>+</button
 						>
@@ -316,7 +417,9 @@
 			· {deckRemaining || (spotify.source === 'spotify' ? loadedTracks.length : '40')} tracks
 		</p>
 		<div class="mt-2 flex flex-wrap gap-2">
-			<button class="btn btn-ghost btn-xs" disabled={disabled} onclick={resetToMock}>Gebruik mock-deck</button>
+			<button class="btn btn-ghost btn-xs" disabled={disabled} onclick={resetToMock}
+				>Gebruik mock-deck</button
+			>
 			{#if spotify.source === 'spotify' && loadedTracks.length}
 				<button class="btn btn-ghost btn-xs" onclick={() => (showOverrides = !showOverrides)}>
 					Year overrides {showOverrides ? '−' : '+'}
@@ -333,8 +436,10 @@
 							bind:value={yearEdits[t.id]}
 							disabled={disabled}
 						/>
-						<button class="btn btn-ghost btn-xs" disabled={disabled} onclick={() => applyOverride(t.id)}
-							>ok</button
+						<button
+							class="btn btn-ghost btn-xs"
+							disabled={disabled}
+							onclick={() => applyOverride(t.id)}>ok</button
 						>
 					</li>
 				{/each}

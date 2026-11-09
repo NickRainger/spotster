@@ -125,13 +125,27 @@ async function fetchProfile(accessToken: string) {
 	};
 }
 
+function toApiPath(urlOrPath: string): string {
+	if (urlOrPath.startsWith('http')) return urlOrPath.replace(API, '');
+	return urlOrPath.startsWith('/') ? urlOrPath : `/${urlOrPath}`;
+}
+
 async function apiGet<T>(accessToken: string, path: string): Promise<T> {
-	const res = await fetch(`${API}${path}`, {
+	const res = await fetch(`${API}${toApiPath(path)}`, {
 		headers: { Authorization: `Bearer ${accessToken}` }
 	});
 	if (!res.ok) {
 		const text = await res.text();
-		throw new Error(`Spotify API ${path}: ${res.status} ${text}`);
+		let detail = text;
+		try {
+			const j = JSON.parse(text) as { error?: { message?: string; status?: number } };
+			detail = j.error?.message || text;
+		} catch {
+			/* keep raw */
+		}
+		const err = new Error(`Spotify ${res.status}: ${detail}`) as Error & { status?: number };
+		err.status = res.status;
+		throw err;
 	}
 	return (await res.json()) as T;
 }
@@ -184,11 +198,27 @@ type TracksPage = {
 };
 
 export async function listPlaylists(accessToken: string): Promise<SpotifyPlaylistSummary[]> {
-	const out: SpotifyPlaylistSummary[] = [];
+	const out: SpotifyPlaylistSummary[] = [
+		{
+			id: 'liked',
+			name: 'Liked Songs',
+			image: null,
+			tracksTotal: 0,
+			owner: 'Jij'
+		}
+	];
+	try {
+		const likedMeta = await apiGet<{ total?: number }>(accessToken, '/me/tracks?limit=1');
+		out[0].tracksTotal = likedMeta.total ?? 0;
+	} catch {
+		/* liked stays with 0 — still selectable */
+	}
+
 	let url: string | null = '/me/playlists?limit=50';
 	while (url) {
-		const pageData: PlaylistPage = await apiGet<PlaylistPage>(accessToken, url.replace(API, ''));
+		const pageData: PlaylistPage = await apiGet<PlaylistPage>(accessToken, toApiPath(url));
 		for (const p of pageData.items ?? []) {
+			if (!p?.id) continue;
 			out.push({
 				id: p.id,
 				name: p.name,
@@ -197,25 +227,81 @@ export async function listPlaylists(accessToken: string): Promise<SpotifyPlaylis
 				owner: p.owner?.display_name ?? ''
 			});
 		}
-		url = pageData.next ? pageData.next.replace(API, '') : null;
+		url = pageData.next ? toApiPath(pageData.next) : null;
 		if (out.length > 200) break;
 	}
 	return out;
 }
 
-export async function getPlaylistTracks(accessToken: string, playlistId: string): Promise<SpotifyApiTrack[]> {
+async function fetchTracksPage(
+	accessToken: string,
+	startPath: string
+): Promise<SpotifyApiTrack[]> {
 	const out: SpotifyApiTrack[] = [];
-	let url: string | null = `/playlists/${encodeURIComponent(playlistId)}/tracks?limit=100&market=from_token`;
+	let url: string | null = startPath;
 	while (url) {
-		const pageData: TracksPage = await apiGet<TracksPage>(accessToken, url.replace(API, ''));
+		const pageData: TracksPage = await apiGet<TracksPage>(accessToken, toApiPath(url));
 		for (const row of pageData.items ?? []) {
 			const t = mapTrack(row.track);
 			if (t) out.push(t);
 		}
-		url = pageData.next ? pageData.next.replace(API, '') : null;
+		url = pageData.next ? toApiPath(pageData.next) : null;
 		if (out.length > 500) break;
 	}
 	return out;
+}
+
+type SavedTracksPage = {
+	items: { track: Parameters<typeof mapTrack>[0] }[];
+	next: string | null;
+	total?: number;
+};
+
+/** Liked Songs (/me/tracks) — not a normal playlist id. */
+export async function getLikedTracks(accessToken: string): Promise<SpotifyApiTrack[]> {
+	const out: SpotifyApiTrack[] = [];
+	let url: string | null = '/me/tracks?limit=50';
+	while (url) {
+		const pageData: SavedTracksPage = await apiGet<SavedTracksPage>(accessToken, toApiPath(url));
+		for (const row of pageData.items ?? []) {
+			const t = mapTrack(row.track);
+			if (t) out.push(t);
+		}
+		url = pageData.next ? toApiPath(pageData.next) : null;
+		if (out.length > 500) break;
+	}
+	return out;
+}
+
+export async function getPlaylistTracks(
+	accessToken: string,
+	playlistId: string
+): Promise<SpotifyApiTrack[]> {
+	if (playlistId === 'liked' || playlistId === 'liked-songs') {
+		return getLikedTracks(accessToken);
+	}
+
+	const id = encodeURIComponent(playlistId);
+	// `market=from_token` often 403's on playlist tracks — prefer no market, then NL fallback
+	const attempts = [
+		`/playlists/${id}/tracks?limit=100&additional_types=track`,
+		`/playlists/${id}/tracks?limit=100&market=NL&additional_types=track`,
+		`/playlists/${id}/tracks?limit=100`
+	];
+
+	let lastErr: unknown;
+	for (const path of attempts) {
+		try {
+			return await fetchTracksPage(accessToken, path);
+		} catch (e) {
+			lastErr = e;
+			const status = (e as { status?: number })?.status;
+			if (status !== 403 && status !== 404) throw e;
+		}
+	}
+	throw lastErr instanceof Error
+		? lastErr
+		: new Error('Playlist tracks niet beschikbaar (403). Check Spotify Dashboard → Users.');
 }
 
 export async function searchTracks(accessToken: string, q: string): Promise<SpotifyApiTrack[]> {
@@ -223,4 +309,30 @@ export async function searchTracks(accessToken: string, q: string): Promise<Spot
 		tracks?: { items: Parameters<typeof mapTrack>[0][] };
 	}>(accessToken, `/search?type=track&limit=20&q=${encodeURIComponent(q)}`);
 	return (page.tracks?.items ?? []).map(mapTrack).filter((t): t is SpotifyApiTrack => !!t);
+}
+
+export async function searchPlaylists(
+	accessToken: string,
+	q: string
+): Promise<SpotifyPlaylistSummary[]> {
+	const page = await apiGet<{
+		playlists?: {
+			items: {
+				id?: string;
+				name?: string;
+				images?: { url: string }[];
+				tracks?: { total?: number };
+				owner?: { display_name?: string };
+			}[];
+		};
+	}>(accessToken, `/search?type=playlist&limit=20&q=${encodeURIComponent(q)}`);
+	return (page.playlists?.items ?? [])
+		.filter((p): p is NonNullable<typeof p> & { id: string; name: string } => !!p?.id && !!p.name)
+		.map((p) => ({
+			id: p.id,
+			name: p.name,
+			image: p.images?.[0]?.url ?? null,
+			tracksTotal: p.tracks?.total ?? 0,
+			owner: p.owner?.display_name ?? ''
+		}));
 }
