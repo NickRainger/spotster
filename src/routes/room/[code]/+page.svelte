@@ -232,7 +232,7 @@
 	{/if}
 
 	<main
-		class="mx-auto min-h-dvh w-full max-w-6xl px-4 pb-24 pt-4 sm:px-6
+		class="mx-auto min-h-dvh w-full max-w-7xl px-5 pb-24 pt-4 sm:px-8 lg:px-10
 			{privacyLocked ? 'pointer-events-none select-none blur-sm brightness-50' : ''}"
 	>
 		<header class="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-4">
@@ -264,88 +264,118 @@
 		{/if}
 
 		{#if !inGame}
-			<section class="anim-enter mx-auto mt-8 max-w-2xl space-y-10">
-				{#if isHost}
-					<div class="flex flex-wrap gap-2">
-						<button
-							class="btn btn-sm {room.playMode === 'multi' ? 'btn-primary' : 'btn-ghost border border-white/15'}"
-							onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'multi' })}
-							>Multi-device</button
-						>
-						<button
-							class="btn btn-sm {room.playMode === 'single' ? 'btn-secondary' : 'btn-ghost border border-white/15'}"
-							onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'single' })}
-							>Single-device</button
-						>
-					</div>
-				{/if}
-
-				<div>
-					<div class="mb-4 flex items-baseline justify-between gap-3">
-						<h2 class="font-display text-3xl">Spelers</h2>
-						<span class="text-sm text-white/40">{room.players.length}</span>
-					</div>
-					{#if isSingle && isHost}
-						<SingleDeviceLobby players={room.players} turnOrder={room.turnOrder} />
-					{:else}
-						<ul class="divide-y divide-white/10 border-y border-white/10">
-							{#each room.turnOrder as pid, idx}
-								{@const p = room.players.find((x) => x.id === pid)}
-								{#if p}
-									<li class="flex items-center gap-3 py-3">
-										<span class="h-2.5 w-2.5 rounded-full" style="background:{p.color}"></span>
-										<span class="flex-1 font-semibold"
-											>{p.name}
-											{#if p.isHost}<span class="ml-1 text-xs font-normal text-primary">host</span>{/if}
-											{#if !p.connected}<span class="ml-1 text-xs font-normal text-warning">offline</span>{/if}
-										</span>
-										{#if isHost && !isSingle}
-											<div class="flex gap-1">
-												<button
-													class="btn btn-ghost btn-xs"
-													onclick={() => movePlayer(p.id, -1)}
-													disabled={idx === 0}>↑</button
-												>
-												<button
-													class="btn btn-ghost btn-xs"
-													onclick={() => movePlayer(p.id, 1)}
-													disabled={idx === room.turnOrder.length - 1}>↓</button
-												>
-												{#if !p.isHost}
-													<button
-														class="btn btn-ghost btn-xs text-error"
-														onclick={() => gameClient.send({ type: 'kick', playerId: p.id })}
-														>kick</button
-													>
-												{/if}
-											</div>
-										{/if}
-									</li>
-								{/if}
-							{/each}
-						</ul>
-						<p class="mt-2 text-xs text-white/40">Volgorde = speelbeurten</p>
+			<section class="anim-enter mt-10 space-y-12 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-20 lg:gap-y-12 lg:space-y-0">
+				<div class="space-y-10">
+					{#if isHost}
+						<div class="flex flex-wrap gap-2">
+							<button
+								class="btn btn-sm {room.playMode === 'multi' ? 'btn-primary' : 'btn-ghost border border-white/15'}"
+								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'multi' })}
+								>Multi-device</button
+							>
+							<button
+								class="btn btn-sm {room.playMode === 'single' ? 'btn-secondary' : 'btn-ghost border border-white/15'}"
+								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'single' })}
+								>Single-device</button
+							>
+						</div>
 					{/if}
+
+					<div>
+						<div class="mb-4 flex items-baseline justify-between gap-3">
+							<h2 class="font-display text-3xl">Spelers</h2>
+							<span class="text-sm text-white/40">{room.players.length}</span>
+						</div>
+						{#if isSingle && isHost}
+							<SingleDeviceLobby players={room.players} turnOrder={room.turnOrder} />
+						{:else}
+							<ul class="divide-y divide-white/10 border-y border-white/10">
+								{#each room.turnOrder as pid, idx}
+									{@const p = room.players.find((x) => x.id === pid)}
+									{#if p}
+										<li class="flex items-center gap-3 py-3.5">
+											<span class="h-2.5 w-2.5 rounded-full" style="background:{p.color}"></span>
+											<span class="flex-1 font-semibold"
+												>{p.name}
+												{#if p.isHost}<span class="ml-1 text-xs font-normal text-primary">host</span>{/if}
+												{#if !p.connected}<span class="ml-1 text-xs font-normal text-warning">offline</span>{/if}
+											</span>
+											{#if isHost && !isSingle}
+												<div class="flex gap-1">
+													<button
+														class="btn btn-ghost btn-xs"
+														onclick={() => movePlayer(p.id, -1)}
+														disabled={idx === 0}>↑</button
+													>
+													<button
+														class="btn btn-ghost btn-xs"
+														onclick={() => movePlayer(p.id, 1)}
+														disabled={idx === room.turnOrder.length - 1}>↓</button
+													>
+													{#if !p.isHost}
+														<button
+															class="btn btn-ghost btn-xs text-error"
+															onclick={() => gameClient.send({ type: 'kick', playerId: p.id })}
+															>kick</button
+														>
+													{/if}
+												</div>
+											{/if}
+										</li>
+									{/if}
+								{/each}
+							</ul>
+							<p class="mt-2 text-xs text-white/40">Volgorde = speelbeurten</p>
+						{/if}
+					</div>
+
+					{#if isHost}
+						<div class="space-y-3">
+							<button
+								class="btn btn-primary btn-lg px-10"
+								onclick={() => gameClient.send({ type: 'start' })}
+								disabled={isSingle && room.turnOrder.length < 1}
+								>Start spel</button
+							>
+							<p class="text-sm text-white/45">
+								Muziek:
+								{#if room.spotify?.source === 'spotify' && room.spotify.playlistName}
+									<span class="text-secondary">{room.spotify.playlistName}</span>
+								{:else}
+									<span class="text-white/60">mock-deck</span> — kies rechts een playlist
+								{/if}
+							</p>
+						</div>
+					{:else}
+						<p class="text-white/60">
+							Wachten tot {room.players.find((p) => p.isHost)?.name ?? 'host'} start…
+						</p>
+					{/if}
+
+					<div>
+						<button
+							type="button"
+							class="mb-3 flex w-full items-baseline justify-between gap-3 text-left"
+							onclick={() => (showSettings = !showSettings)}
+						>
+							<div>
+								<h2 class="font-display text-2xl">Regels</h2>
+								{#if !showSettings}
+									<p class="text-sm text-white/40">
+										{room.settings.rulesVariant} · win op {room.settings.winAt} · {room.settings
+											.challengeSeconds}s challenge
+									</p>
+								{/if}
+							</div>
+							<span class="text-sm text-white/40">{showSettings ? 'verberg' : 'pas aan'}</span>
+						</button>
+						{#if showSettings}
+							<SettingsPanel settings={room.settings} disabled={!isHost} onChange={patchSettings} />
+						{/if}
+					</div>
 				</div>
 
 				{#if isHost}
-					<div class="space-y-3">
-						<button
-							class="btn btn-primary btn-lg px-10"
-							onclick={() => gameClient.send({ type: 'start' })}
-							disabled={isSingle && room.turnOrder.length < 1}
-							>Start spel</button
-						>
-						<p class="text-sm text-white/45">
-							Muziek:
-							{#if room.spotify?.source === 'spotify' && room.spotify.playlistName}
-								<span class="text-secondary">{room.spotify.playlistName}</span>
-							{:else}
-								<span class="text-white/60">mock-deck</span> — kies hieronder een playlist
-							{/if}
-						</p>
-					</div>
-
 					<div>
 						<button
 							type="button"
@@ -370,33 +400,7 @@
 							/>
 						{/if}
 					</div>
-				{:else}
-					<p class="text-white/60">
-						Wachten tot {room.players.find((p) => p.isHost)?.name ?? 'host'} start…
-					</p>
 				{/if}
-
-				<div>
-					<button
-						type="button"
-						class="mb-3 flex w-full items-baseline justify-between gap-3 text-left"
-						onclick={() => (showSettings = !showSettings)}
-					>
-						<div>
-							<h2 class="font-display text-2xl">Regels</h2>
-							{#if !showSettings}
-								<p class="text-sm text-white/40">
-									{room.settings.rulesVariant} · win op {room.settings.winAt} · {room.settings
-										.challengeSeconds}s challenge
-								</p>
-							{/if}
-						</div>
-						<span class="text-sm text-white/40">{showSettings ? 'verberg' : 'pas aan'}</span>
-					</button>
-					{#if showSettings}
-						<SettingsPanel settings={room.settings} disabled={!isHost} onChange={patchSettings} />
-					{/if}
-				</div>
 			</section>
 		{:else}
 			<!-- GAME -->
