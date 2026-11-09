@@ -14,7 +14,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
 	threeForOneCost: 3,
 	skipCost: 1,
 	hostPlays: true,
-	playDurationSec: 30,
+	/** 0 = unlimited (volledig nummer); anders clip in seconden */
+	playDurationSec: 0,
 	playOffsetSec: 0,
 	disconnectGraceSec: 60,
 	autoFlowDelayMs: 1800
@@ -88,7 +89,9 @@ export function mergeSettings(
 	merged.challengeSeconds = clamp(merged.challengeSeconds, 3, 60);
 	merged.threeForOneCost = clamp(merged.threeForOneCost, 1, 10);
 	merged.skipCost = clamp(merged.skipCost, 0, 5);
-	merged.playDurationSec = clamp(merged.playDurationSec, 5, 120);
+	// 0 = unlimited full track; otherwise 5–600s clip
+	merged.playDurationSec =
+		merged.playDurationSec <= 0 ? 0 : clamp(merged.playDurationSec, 5, 600);
 	merged.playOffsetSec = clamp(merged.playOffsetSec, 0, 180);
 	merged.disconnectGraceSec = clamp(merged.disconnectGraceSec, 10, 300);
 	merged.autoFlowDelayMs = clamp(merged.autoFlowDelayMs, 400, 5000);

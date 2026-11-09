@@ -18,8 +18,6 @@
 	let waitingRoom = $state(false);
 	let selectedSlot = $state<number | null>(null);
 	let challengeSlot = $state<number | null>(null);
-	let showSettings = $state(false);
-	let showMusic = $state(true);
 	let showJoinQr = $state(false);
 	let challengeLeft = $state(0);
 
@@ -234,22 +232,22 @@
 	{/if}
 
 	<main
-		class="mx-auto min-h-dvh w-full max-w-7xl px-4 pb-28 pt-3 sm:px-8 sm:pb-24 sm:pt-4 lg:px-10
+		class="game-shell min-h-dvh w-full pb-28 pt-3 sm:pb-24 sm:pt-4
 			{privacyLocked ? 'pointer-events-none select-none blur-sm brightness-50' : ''}"
 	>
-		<header class="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-4">
-			<div>
-				<p class="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
+		<header class="mb-4 flex min-w-0 flex-wrap items-end justify-between gap-3 border-b border-primary/30 pb-4">
+			<div class="min-w-0">
+				<p class="game-label">
 					{inGame ? PHASE_LABELS[phase] : 'lobby'}
 					{#if isSingle}
 						· single-device
 					{/if}
 				</p>
-				<h1 class="brand-word text-4xl sm:text-5xl">spotster</h1>
+				<h1 class="brand-word mt-1 text-4xl sm:text-5xl">spotster</h1>
 			</div>
-			<div class="flex flex-col items-end gap-2">
+			<div class="flex shrink-0 flex-col items-end gap-2">
 				<p class="font-display text-3xl tracking-[0.2em] text-accent">{room.code}</p>
-				<p class="text-xs text-white/40">
+				<p class="text-xs text-white/50">
 					{snap.connected ? 'live' : 'reconnect…'} · {room.deckRemaining} tracks
 				</p>
 				<div class="flex flex-wrap justify-end gap-1">
@@ -277,44 +275,47 @@
 		{/if}
 
 		{#if !inGame}
-			<section class="anim-enter mt-6 space-y-10 sm:mt-10 sm:space-y-12 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-20 lg:gap-y-12 lg:space-y-0">
-				<div class="space-y-8 sm:space-y-10">
+			<section class="anim-enter mt-4 grid min-w-0 gap-4 lg:grid-cols-2 lg:items-start lg:gap-5">
+				<div class="flex min-w-0 flex-col gap-4">
 					{#if isHost}
-						<div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-							<button
-								class="btn min-h-12 text-sm sm:btn-sm {room.playMode === 'multi' ? 'btn-primary' : 'btn-ghost border border-white/15'}"
-								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'multi' })}
-								>Multi-device</button
-							>
-							<button
-								class="btn min-h-12 text-sm sm:btn-sm {room.playMode === 'single' ? 'btn-secondary' : 'btn-ghost border border-white/15'}"
-								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'single' })}
-								>Single-device</button
-							>
+						<div class="game-section">
+							<h2 class="game-h">Modus <span class="game-h-sub">hoe speel je</span></h2>
+							<div class="grid grid-cols-2 gap-2">
+								<button
+									class="btn min-h-12 text-base {room.playMode === 'multi' ? 'btn-primary' : 'btn-ghost border border-primary/25 bg-base-100/40'}"
+									onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'multi' })}
+									>Multi-device</button
+								>
+								<button
+									class="btn min-h-12 text-base {room.playMode === 'single' ? 'btn-secondary' : 'btn-ghost border border-primary/25 bg-base-100/40'}"
+									onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'single' })}
+									>Single-device</button
+								>
+							</div>
 						</div>
 					{/if}
 
-					<div>
-						<div class="mb-4 flex items-baseline justify-between gap-3">
-							<h2 class="font-display text-3xl">Spelers</h2>
-							<span class="text-sm text-white/40">{room.players.length}</span>
+					<div class="game-section">
+						<div class="mb-3 flex items-baseline justify-between gap-3">
+							<h2 class="game-h mb-0">Spelers <span class="game-h-sub">volgorde = beurten</span></h2>
+							<span class="text-sm font-semibold text-primary">{room.players.length}</span>
 						</div>
 						{#if isSingle && isHost}
 							<SingleDeviceLobby players={room.players} turnOrder={room.turnOrder} />
 						{:else}
-							<ul class="divide-y divide-white/10 border-y border-white/10">
+							<ul class="divide-y divide-primary/15 rounded-xl border border-primary/20 bg-base-100/40">
 								{#each room.turnOrder as pid, idx}
 									{@const p = room.players.find((x) => x.id === pid)}
 									{#if p}
-										<li class="flex items-center gap-3 py-3.5">
-											<span class="h-2.5 w-2.5 rounded-full" style="background:{p.color}"></span>
-											<span class="flex-1 font-semibold"
+										<li class="flex min-w-0 items-center gap-3 px-3 py-3.5">
+											<span class="h-3 w-3 shrink-0 rounded-full" style="background:{p.color}"></span>
+											<span class="min-w-0 flex-1 truncate font-semibold"
 												>{p.name}
 												{#if p.isHost}<span class="ml-1 text-xs font-normal text-primary">host</span>{/if}
 												{#if !p.connected}<span class="ml-1 text-xs font-normal text-warning">offline</span>{/if}
 											</span>
 											{#if isHost && !isSingle}
-												<div class="flex gap-1">
+												<div class="flex shrink-0 gap-1">
 													<button
 														class="btn btn-ghost btn-xs"
 														onclick={() => movePlayer(p.id, -1)}
@@ -338,7 +339,6 @@
 									{/if}
 								{/each}
 							</ul>
-							<p class="mt-2 text-xs text-white/40">Volgorde = speelbeurten</p>
 						{/if}
 					</div>
 
@@ -347,99 +347,76 @@
 							room.spotify?.source === 'spotify' &&
 							!!room.spotify.playlistName &&
 							room.deckRemaining >= 5}
-						<div class="space-y-3">
+						<div class="game-section space-y-3">
+							<h2 class="game-h">Start <span class="game-h-sub">klaar voor de avond</span></h2>
 							<button
-								class="btn btn-secondary btn-lg min-h-12 w-full text-base sm:w-auto"
+								class="btn btn-secondary btn-lg min-h-12 w-full text-base"
 								type="button"
 								onclick={() => (showJoinQr = true)}>Toon QR om te joinen</button
 							>
 							<button
-								class="btn btn-primary btn-lg min-h-14 w-full px-10 text-base sm:w-auto"
+								class="btn btn-primary btn-lg min-h-14 w-full px-10 text-base"
 								onclick={() => gameClient.send({ type: 'start' })}
 								disabled={(isSingle && room.turnOrder.length < 1) || !spotifyReady}
 								>Start spel</button
 							>
 							{#if !spotifyReady}
-								<p class="text-base text-warning sm:text-sm">
+								<p class="text-base text-warning">
 									Verbind Spotify en kies een playlist (min. 5 tracks) vóór Start — geen mock-deck.
 								</p>
 							{:else}
-								<p class="text-base text-white/55 sm:text-sm sm:text-white/45">
+								<p class="text-base text-white/70">
 									Muziek: <span class="text-secondary">{room.spotify?.playlistName}</span>
 									· {room.deckRemaining} tracks
 								</p>
 							{/if}
 						</div>
 					{:else}
-						<p class="text-white/60">
-							Wachten tot {room.players.find((p) => p.isHost)?.name ?? 'host'} start…
-						</p>
+						<div class="game-section">
+							<h2 class="game-h">Wachten</h2>
+							<p class="text-white/70">
+								Wachten tot {room.players.find((p) => p.isHost)?.name ?? 'host'} start…
+							</p>
+						</div>
 					{/if}
 
-					<div>
-						<button
-							type="button"
-							class="mb-3 flex min-h-12 w-full items-center justify-between gap-3 text-left"
-							onclick={() => (showSettings = !showSettings)}
-						>
-							<div>
-								<h2 class="font-display text-2xl sm:text-2xl">Regels</h2>
-								{#if !showSettings}
-									<p class="text-base text-white/50 sm:text-sm sm:text-white/40">
-										{room.settings.rulesVariant} · win op {room.settings.winAt} · {room.settings
-											.challengeSeconds}s
-									</p>
-								{/if}
-							</div>
-							<span class="shrink-0 text-base text-primary sm:text-sm sm:text-white/40"
-								>{showSettings ? 'verberg' : 'pas aan'}</span
-							>
-						</button>
-						{#if showSettings}
-							<SettingsPanel settings={room.settings} disabled={!isHost} onChange={patchSettings} />
-						{/if}
+					<div class="game-section">
+						<h2 class="game-h">Regels <span class="game-h-sub">alles zichtbaar · host kan wijzigen</span></h2>
+						<SettingsPanel settings={room.settings} disabled={!isHost} onChange={patchSettings} />
 					</div>
 				</div>
 
 				{#if isHost}
-					<div class="min-w-0">
-						<button
-							type="button"
-							class="mb-3 flex min-h-12 w-full items-center justify-between gap-3 text-left"
-							onclick={() => (showMusic = !showMusic)}
-						>
-							<h2 class="font-display text-2xl">Muziek</h2>
-							<span class="shrink-0 text-base text-primary sm:text-sm sm:text-white/40"
-								>{showMusic ? 'verberg' : 'toon'}</span
-							>
-						</button>
-						{#if showMusic}
-							<SpotifyPanel
-								roomCode={room.code}
-								spotify={room.spotify ?? {
-									connected: false,
-									tier: 'unknown',
-									displayName: null,
-									playlistName: null,
-									playlistId: null,
-									source: 'mock'
-								}}
-								deckRemaining={room.deckRemaining}
-							/>
-						{/if}
+					<div class="game-section min-w-0">
+						<h2 class="game-h">Muziek <span class="game-h-sub">Spotify deck</span></h2>
+						<SpotifyPanel
+							roomCode={room.code}
+							spotify={room.spotify ?? {
+								connected: false,
+								tier: 'unknown',
+								displayName: null,
+								playlistName: null,
+								playlistId: null,
+								source: 'mock'
+							}}
+							deckRemaining={room.deckRemaining}
+						/>
 					</div>
 				{/if}
 			</section>
 		{:else}
 			<!-- GAME -->
-			<section class="anim-enter mt-5 space-y-6">
-				<HostPlayback
-					isHost={isHost || !!isSingle}
-					{phase}
-					track={room.turn.track}
-					settings={room.settings}
-					spotifySource={room.spotify?.source ?? 'mock'}
-				/>
+			<section class="anim-enter mt-4 flex min-w-0 flex-col gap-4">
+				<div class="game-section min-w-0">
+					<h2 class="game-h">Nu spelen <span class="game-h-sub">{PHASE_LABELS[phase]}</span></h2>
+					<HostPlayback
+						isHost={isHost || !!isSingle}
+						{phase}
+						track={room.turn.track}
+						settings={room.settings}
+						spotifySource={room.spotify?.source ?? 'mock'}
+					/>
+				</div>
 
 				{#if phase === 'GAME_OVER'}
 					<div class="rounded-3xl border border-accent/40 bg-accent/10 p-6 text-center">
@@ -497,20 +474,17 @@
 					<!-- JOUW BORD -->
 					{#if myBoard}
 						<section
-							class="relative space-y-3 border-y-2 py-5"
-							style="border-color:{myBoard.color}"
+							class="game-section relative min-w-0 space-y-3 border-l-4"
+							style="border-left-color:{myBoard.color}"
 							aria-label="Jouw bord"
 						>
-							<div class="flex flex-wrap items-end justify-between gap-3">
-								<div>
-									<p
-										class="text-xs font-semibold uppercase tracking-[0.3em]"
-										style="color:{myBoard.color}"
-									>
-										Jouw bord
-									</p>
-									<h2 class="font-display text-3xl sm:text-4xl">{myBoard.name}</h2>
-									<p class="text-sm text-white/45">
+							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
+								<div class="min-w-0">
+									<p class="game-label" style="color:{myBoard.color}">Jouw bord</p>
+									<h2 class="game-h mb-0 text-white" style="color:{myBoard.color}; text-shadow:none">
+										{myBoard.name}
+									</h2>
+									<p class="mt-1 text-sm text-white/60">
 										{myBoard.timeline.length}/{room.settings.winAt} kaarten
 										{#if myBoardIsActive && phase !== 'CHALLENGE_WINDOW'}
 											· <span class="text-primary">jij bent aan de beurt</span>
@@ -566,15 +540,15 @@
 					<!-- CHALLENGE: viesjes op bord van actieve speler (niet op jouw eigen bord) -->
 					{#if phase === 'CHALLENGE_WINDOW' && activePlayer && !privacyLocked && !myBoardIsActive}
 						<section
-							class="space-y-3 rounded-2xl border-2 border-secondary/40 bg-secondary/5 p-4 sm:p-5"
+							class="game-section min-w-0 space-y-3 border-secondary/50"
 							aria-label="Challenge op bord van actieve speler"
 						>
-							<div class="flex flex-wrap items-end justify-between gap-3">
-								<div>
-									<p class="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
+							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
+								<div class="min-w-0">
+									<p class="game-label text-secondary">
 										Challenge · bord van {activePlayer.name}
 									</p>
-									<h2 class="font-display text-2xl sm:text-3xl">{activePlayer.name}</h2>
+									<h2 class="game-h mb-0">{activePlayer.name}</h2>
 									<p class="text-sm text-white/55">
 										Leg een viesje op een slot op <strong>dit</strong> bord (waar jij denkt dat het
 										nummer hoort) — niet op jouw eigen bord.
@@ -622,18 +596,18 @@
 							{/if}
 						</section>
 					{:else if !isSingle && activePlayer && me && activePlayer.id !== me.id && (phase === 'HOST_PLAYING' || phase === 'GUESSING' || phase === 'GUESS_LOCKED')}
-						<section class="active-board-ref" aria-label="Bord van actieve speler">
-							<p class="mb-1 text-xs font-semibold uppercase tracking-[0.25em] text-zinc-400">
-								Nu aan zet · niet jouw bord
-							</p>
+						<section class="game-section active-board-ref min-w-0" aria-label="Bord van actieve speler">
+							<p class="game-label text-zinc-400">Nu aan zet · niet jouw bord</p>
 							<div class="mb-2 flex items-center gap-2">
 								<span class="h-2.5 w-2.5 rounded-full bg-zinc-400"></span>
-								<h3 class="font-display text-xl text-zinc-300">{activePlayer.name}</h3>
+								<h3 class="game-h mb-0 text-zinc-300" style="color:#d4d4d8;text-shadow:none">
+									{activePlayer.name}
+								</h3>
 								<span class="text-xs text-zinc-500"
 									>{activePlayer.timeline.length}/{room.settings.winAt}</span
 								>
 							</div>
-							<div class="grayscale">
+							<div class="min-w-0 grayscale">
 								<Timeline
 									cards={activePlayer.timeline}
 									lockedSlot={room.turn.lockedSlot}
@@ -645,22 +619,20 @@
 
 					<!-- Andere spelers — secundair (actieve tijdens challenge zit hierboven) -->
 					{#if others.length}
-						<section class="space-y-3 pt-2" aria-label="Andere spelers">
-							<p class="text-xs font-semibold uppercase tracking-[0.3em] text-white/35">
-								Andere spelers
-							</p>
-							<div class="grid gap-4 sm:grid-cols-2">
+						<section class="game-section min-w-0 space-y-3" aria-label="Andere spelers">
+							<h2 class="game-h">Andere spelers</h2>
+							<div class="grid min-w-0 gap-4 sm:grid-cols-2">
 								{#each others as p}
-									<div class="border-l-2 border-white/15 pl-3">
-										<div class="mb-1 flex items-center gap-2">
-											<span class="h-2 w-2 rounded-full" style="background:{p.color}"></span>
-											<span class="text-sm font-semibold text-white/75">{p.name}</span>
-											<span class="ml-auto text-xs text-white/35"
+									<div class="min-w-0 border-l-2 border-primary/25 pl-3">
+										<div class="mb-1 flex min-w-0 items-center gap-2">
+											<span class="h-2 w-2 shrink-0 rounded-full" style="background:{p.color}"></span>
+											<span class="truncate text-sm font-semibold text-white/80">{p.name}</span>
+											<span class="ml-auto shrink-0 text-xs text-white/45"
 												>{p.timeline.length}/{room.settings.winAt} · {p.tokens}◆</span
 											>
 										</div>
 										{#if showAllTimelines}
-											<div class="origin-left scale-[0.95] grayscale">
+											<div class="min-w-0 grayscale">
 												<Timeline cards={p.timeline} dimYears />
 											</div>
 										{:else}

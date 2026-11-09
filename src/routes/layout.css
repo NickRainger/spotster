@@ -7,10 +7,10 @@
 	name: 'spotster';
 	default: true;
 	color-scheme: dark;
-	--color-base-100: #0b1220;
-	--color-base-200: #121a2b;
-	--color-base-300: #1a2438;
-	--color-base-content: #f4efe6;
+	--color-base-100: #0a0e18;
+	--color-base-200: #12182a;
+	--color-base-300: #1c253a;
+	--color-base-content: #fff6ec;
 	--color-primary: #ff5c33;
 	--color-primary-content: #1a0a04;
 	--color-secondary: #2dd4bf;
@@ -18,14 +18,14 @@
 	--color-accent: #fbbf24;
 	--color-accent-content: #1c1403;
 	--color-neutral: #243047;
-	--color-neutral-content: #f4efe6;
+	--color-neutral-content: #fff6ec;
 	--color-info: #60a5fa;
 	--color-success: #4ade80;
 	--color-warning: #fbbf24;
 	--color-error: #fb7185;
-	--radius-box: 1rem;
-	--radius-field: 0.75rem;
-	--radius-selector: 9999px;
+	--radius-box: 0.75rem;
+	--radius-field: 0.65rem;
+	--radius-selector: 0.5rem;
 }
 
 @font-face {
@@ -39,28 +39,44 @@
 :root {
 	--font-display: 'Syne', 'Avenir Next', 'Segoe UI', sans-serif;
 	--font-body: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
-	--spotster-ink: #0b1220;
+	--spotster-ink: #0a0e18;
 	--spotster-flare: #ff5c33;
 	--spotster-teal: #2dd4bf;
 	--spotster-gold: #fbbf24;
-	--spotster-cream: #f4efe6;
+	--spotster-cream: #fff6ec;
+	--spotster-panel: rgba(18, 24, 42, 0.92);
+	--spotster-line: rgba(255, 92, 51, 0.45);
+}
+
+html {
+	overflow-x: clip;
+	max-width: 100%;
 }
 
 html,
 body {
 	min-height: 100%;
+	width: 100%;
+	max-width: 100%;
 	font-family: var(--font-body);
 	background: var(--spotster-ink);
 	color: var(--spotster-cream);
 }
 
 body {
+	overflow-x: clip;
 	background-image:
-		radial-gradient(ellipse 80% 50% at 10% -10%, rgba(255, 92, 51, 0.28), transparent 55%),
-		radial-gradient(ellipse 60% 40% at 90% 0%, rgba(45, 212, 191, 0.18), transparent 50%),
-		radial-gradient(ellipse 50% 40% at 50% 100%, rgba(251, 191, 36, 0.08), transparent 55%),
-		linear-gradient(180deg, #0b1220 0%, #0e1524 40%, #0b1220 100%);
+		radial-gradient(ellipse 90% 55% at 50% -15%, rgba(255, 92, 51, 0.35), transparent 55%),
+		radial-gradient(ellipse 50% 40% at 100% 20%, rgba(251, 191, 36, 0.12), transparent 50%),
+		radial-gradient(ellipse 40% 35% at 0% 80%, rgba(45, 212, 191, 0.12), transparent 50%),
+		linear-gradient(180deg, #0a0e18 0%, #101628 50%, #0a0e18 100%);
 	background-attachment: fixed;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
 }
 
 .font-display {
@@ -79,10 +95,67 @@ body {
 	color: transparent;
 }
 
+/* Game chrome */
+.game-shell {
+	width: 100%;
+	max-width: 80rem;
+	margin-inline: auto;
+	padding-inline: 1rem;
+	overflow-x: clip;
+}
+
+.game-section {
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	border: 1px solid var(--spotster-line);
+	border-radius: 1rem;
+	background: var(--spotster-panel);
+	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 246, 236, 0.04);
+	padding: 1rem 1rem 1.15rem;
+}
+
+@media (min-width: 640px) {
+	.game-section {
+		padding: 1.25rem 1.35rem 1.4rem;
+	}
+}
+
+.game-h {
+	font-family: var(--font-display);
+	font-weight: 800;
+	font-size: clamp(1.35rem, 5vw, 1.85rem);
+	letter-spacing: -0.03em;
+	color: var(--spotster-flare);
+	text-shadow: 0 0 24px rgba(255, 92, 51, 0.35);
+	margin: 0 0 0.75rem;
+	line-height: 1.1;
+}
+
+.game-h-sub {
+	display: block;
+	margin-top: 0.2rem;
+	font-family: var(--font-body);
+	font-size: 0.8rem;
+	font-weight: 600;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: rgba(255, 246, 236, 0.45);
+	text-shadow: none;
+}
+
+.game-label {
+	font-size: 0.7rem;
+	font-weight: 700;
+	letter-spacing: 0.22em;
+	text-transform: uppercase;
+	color: var(--spotster-flare);
+}
+
 .vinyl-ring {
 	background:
-		radial-gradient(circle at center, #0b1220 0 18%, transparent 18.5%),
-		repeating-radial-gradient(circle at center, #1a2438 0 2px, #121a2b 2px 4px);
+		radial-gradient(circle at center, #0a0e18 0 18%, transparent 18.5%),
+		repeating-radial-gradient(circle at center, #1c253a 0 2px, #12182a 2px 4px);
 	box-shadow: 0 0 0 1px rgba(244, 239, 230, 0.08), 0 20px 60px rgba(0, 0, 0, 0.45);
 }
 
@@ -128,8 +201,19 @@ body {
 }
 
 .timeline-scroll {
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior-x: contain;
 	scrollbar-width: thin;
 	scrollbar-color: rgba(255, 92, 51, 0.5) transparent;
+}
+
+.timeline-fade {
+	isolation: isolate;
 }
 
 /* Active opponent board: full opacity, grey — not faded transparency */

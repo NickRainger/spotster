@@ -247,7 +247,9 @@ export class HostSpotifyPlayer {
 	async playTrack(opts: PlayTrackOpts) {
 		this.clearStopTimer();
 		const offsetMs = Math.max(0, (opts.playOffsetSec ?? 0) * 1000);
-		const durationMs = Math.max(3000, (opts.playDurationSec ?? 30) * 1000);
+		// 0 / missing negative → unlimited (no auto-stop); else clip length
+		const unlimited = !opts.playDurationSec || opts.playDurationSec <= 0;
+		const durationMs = unlimited ? 0 : Math.max(3000, opts.playDurationSec * 1000);
 		const fromGesture = !!opts.fromUserGesture;
 
 		// Queue until unlock if auto-path and never armed
@@ -276,7 +278,7 @@ export class HostSpotifyPlayer {
 				}
 				await this.transferPlayback();
 				await this.playPremium(opts.uri, offsetMs);
-				this.armStop(durationMs);
+				if (durationMs > 0) this.armStop(durationMs);
 				this.unlocked = true;
 				this.set({
 					mode: 'premium',
@@ -294,7 +296,9 @@ export class HostSpotifyPlayer {
 		if (opts.previewUrl) {
 			try {
 				await this.playPreview(opts.previewUrl, offsetMs);
-				this.armStop(Math.min(durationMs, 30_000 - offsetMs));
+				// Spotify previews max ~30s; still respect shorter clips
+				const previewCap = Math.max(1000, 30_000 - offsetMs);
+				this.armStop(durationMs > 0 ? Math.min(durationMs, previewCap) : previewCap);
 				this.unlocked = true;
 				this.set({
 					mode: 'preview',

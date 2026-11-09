@@ -175,7 +175,11 @@
 				{#if status.ready && status.mode === 'premium'}
 					<span class="text-secondary">device ready</span>
 				{/if}
-				<span>{settings.playDurationSec}s</span>
+				<span
+					>{settings.playDurationSec <= 0
+						? 'onbeperkt'
+						: `${settings.playDurationSec}s`}</span
+				>
 				{#if status.error}
 					<span class="w-full text-warning sm:w-auto">{status.error}</span>
 				{/if}
