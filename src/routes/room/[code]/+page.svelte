@@ -188,6 +188,11 @@
 		return isSingle && seatId ? seatId : undefined;
 	}
 
+	function leaveRoom() {
+		gameClient.send({ type: 'leave' });
+		goto('/');
+	}
+
 	function lockIn() {
 		if (selectedSlot == null) return;
 		gameClient.send({ type: 'lock_slot', slotIndex: selectedSlot, asPlayerId: asId() });
@@ -239,11 +244,14 @@
 				</p>
 				<h1 class="brand-word text-4xl sm:text-5xl">spotster</h1>
 			</div>
-			<div class="text-right">
+			<div class="flex flex-col items-end gap-2">
 				<p class="font-display text-3xl tracking-[0.2em] text-accent">{room.code}</p>
 				<p class="text-xs text-white/40">
 					{snap.connected ? 'live' : 'reconnect…'} · {room.deckRemaining} tracks
 				</p>
+				<button class="btn btn-ghost btn-xs text-error" type="button" onclick={leaveRoom}
+					>Leave</button
+				>
 			</div>
 		</header>
 
@@ -333,6 +341,9 @@
 								onclick={() => gameClient.send({ type: 'start' })}
 								disabled={isSingle && room.turnOrder.length < 1}
 								>Start spel</button
+							>
+							<button class="btn btn-ghost btn-lg text-error" type="button" onclick={leaveRoom}
+								>Leave</button
 							>
 						</div>
 						{#if room.spotify}
@@ -607,12 +618,8 @@
 								onclick={() => gameClient.send({ type: 'host_skip_turn' })}>Skip beurt</button
 							>
 						{/if}
-						<button
-							class="btn btn-ghost btn-sm text-error"
-							onclick={() => {
-								gameClient.send({ type: 'leave' });
-								goto('/');
-							}}>Leave</button
+						<button class="btn btn-ghost btn-sm text-error" type="button" onclick={leaveRoom}
+							>Leave</button
 						>
 					</div>
 				{/if}
