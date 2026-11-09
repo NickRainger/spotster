@@ -412,18 +412,7 @@
 			</section>
 		{:else}
 			<!-- GAME -->
-			<section class="anim-enter mt-4 flex min-w-0 flex-col gap-4">
-				<div class="game-section min-w-0">
-					<h2 class="game-h">Nu spelen <span class="game-h-sub">{PHASE_LABELS[phase]}</span></h2>
-					<HostPlayback
-						isHost={isHost || !!isSingle}
-						{phase}
-						track={room.turn.track}
-						settings={room.settings}
-						spotifySource={room.spotify?.source ?? 'mock'}
-					/>
-				</div>
-
+			<section class="anim-enter mt-3 flex min-w-0 flex-col gap-3">
 				{#if phase === 'GAME_OVER'}
 					<div class="rounded-3xl border border-accent/40 bg-accent/10 p-6 text-center">
 						<p class="text-sm uppercase tracking-[0.3em] text-accent">winner</p>
@@ -440,7 +429,47 @@
 							>
 						{/if}
 					</div>
+				{:else if activePlayer}
+					{@const turnIsMine =
+						(isSingle ? seatId === activePlayer.id : me?.id === activePlayer.id)}
+					<header
+						class="turn-banner min-w-0 rounded-2xl border-2 px-4 py-5 text-center sm:px-6 sm:py-6"
+						style="border-color:{activePlayer.color}; background: color-mix(in srgb, {activePlayer.color} 18%, #0a0e18)"
+						aria-live="polite"
+					>
+						<p
+							class="text-xs font-bold uppercase tracking-[0.35em] sm:text-sm"
+							style="color:{activePlayer.color}"
+						>
+							Aan de beurt
+						</p>
+						<p
+							class="font-display mt-1 break-words text-[clamp(2.75rem,14vw,5.5rem)] leading-[0.9] tracking-tight"
+							style="color:{activePlayer.color}"
+						>
+							{activePlayer.name}
+						</p>
+						<p class="mt-2 text-base text-white/70 sm:text-lg">
+							{PHASE_LABELS[phase]}
+							{#if turnIsMine}
+								· <span class="text-primary font-semibold">dat ben jij</span>
+							{/if}
+							· {activePlayer.timeline.length}/{room.settings.winAt}
+						</p>
+					</header>
 				{/if}
+
+				<!-- Compact now-playing / host audio -->
+				<div class="now-playing-compact min-w-0">
+					<HostPlayback
+						isHost={isHost || !!isSingle}
+						{phase}
+						track={room.turn.track}
+						settings={room.settings}
+						spotifySource={room.spotify?.source ?? 'mock'}
+						compact
+					/>
+				</div>
 
 				{#if !privacyLocked && room.turn.lastResolve && (phase === 'RESOLVE' || phase === 'REVEAL' || phase === 'CHECK_WIN')}
 					<div class="border-l-4 border-accent pl-4">
@@ -481,33 +510,20 @@
 							p.id !== room.turn.activePlayerId
 					)}
 
-					<!-- 1) ACTIEVE SPELER — altijd bovenaan -->
+					<!-- 1) ACTIEVE SPELER BORD — onder de grote turn-banner -->
 					{#if activePlayer && myBoardIsActive}
 						<section
 							class="game-section relative min-w-0 space-y-3 border-l-4"
 							style="border-left-color:{activePlayer.color}"
-							aria-label="Actieve speler · jouw bord"
+							aria-label="Jouw bord · aan de beurt"
 						>
-							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
-								<div class="min-w-0">
-									<p class="game-label" style="color:{activePlayer.color}">
-										Aan de beurt · jouw bord
-									</p>
-									<h2
-										class="game-h mb-0 text-white"
-										style="color:{activePlayer.color}; text-shadow:none"
-									>
-										{activePlayer.name}
-									</h2>
-									<p class="mt-1 text-sm text-white/60">
-										{activePlayer.timeline.length}/{room.settings.winAt} kaarten
-										{#if phase !== 'CHALLENGE_WINDOW'}
-											· <span class="text-primary">jij bent aan de beurt</span>
-										{:else}
-											· <span class="text-white/50">wacht op viesjes van anderen</span>
-										{/if}
-									</p>
-								</div>
+							<div class="flex min-w-0 flex-wrap items-center justify-between gap-2">
+								<p class="text-sm font-semibold text-white/80">
+									Jouw bord
+									{#if phase === 'CHALLENGE_WINDOW'}
+										· <span class="text-white/50">wacht op viesjes</span>
+									{/if}
+								</p>
 								<span
 									class="rounded-full px-3 py-1 text-sm font-semibold"
 									style="background:{activePlayer.color}33;color:{activePlayer.color}"
@@ -554,21 +570,14 @@
 						<section
 							class="game-section min-w-0 space-y-3 border-l-4 border-secondary/60"
 							style="border-left-color: var(--spotster-teal)"
-							aria-label="Actieve speler · challenge"
+							aria-label="Challenge op actief bord"
 						>
-							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
-								<div class="min-w-0">
-									<p class="game-label text-secondary">
-										Aan de beurt · challenge op {activePlayer.name}
-									</p>
-									<h2 class="game-h mb-0">{activePlayer.name}</h2>
-									<p class="text-sm text-white/55">
-										Leg een viesje op een slot op <strong>dit</strong> bord (waar jij denkt dat
-										het nummer hoort) — niet op jouw eigen bord.
-									</p>
-								</div>
+							<div class="flex min-w-0 flex-wrap items-center justify-between gap-2">
+								<p class="text-sm text-white/70">
+									Challenge · leg een viesje op <strong class="text-secondary">dit</strong> bord
+								</p>
 								{#if challengeLeft > 0}
-									<span class="font-display text-3xl text-secondary">{challengeLeft}s</span>
+									<span class="font-display text-2xl text-secondary">{challengeLeft}s</span>
 								{/if}
 							</div>
 
@@ -610,24 +619,12 @@
 						</section>
 					{:else if activePlayer}
 						<section
-							class="game-section min-w-0 space-y-3 border-l-4"
+							class="game-section min-w-0 space-y-2 border-l-4"
 							style="border-left-color:{activePlayer.color}"
-							aria-label="Actieve speler"
+							aria-label="Bord van actieve speler"
 						>
-							<div class="flex min-w-0 flex-wrap items-end justify-between gap-3">
-								<div class="min-w-0">
-									<p class="game-label" style="color:{activePlayer.color}">Aan de beurt</p>
-									<h2
-										class="game-h mb-0"
-										style="color:{activePlayer.color}; text-shadow:none"
-									>
-										{activePlayer.name}
-									</h2>
-									<p class="mt-1 text-sm text-white/60">
-										{activePlayer.timeline.length}/{room.settings.winAt} kaarten
-										· <span class="text-primary">nu aan zet</span>
-									</p>
-								</div>
+							<div class="flex min-w-0 items-center justify-between gap-2">
+								<p class="text-sm text-white/60">Bord van {activePlayer.name}</p>
 								<span
 									class="rounded-full px-3 py-1 text-sm font-semibold"
 									style="background:{activePlayer.color}33;color:{activePlayer.color}"
