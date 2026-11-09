@@ -141,7 +141,7 @@
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		width: 1.75rem;
+		width: 2.5rem;
 		z-index: 2;
 		opacity: 0;
 		transition: opacity 0.2s ease;
@@ -149,12 +149,24 @@
 
 	.timeline-fade::before {
 		left: 0;
-		background: linear-gradient(to right, rgba(10, 14, 24, 0.95), transparent);
+		background: linear-gradient(
+			to right,
+			rgba(10, 14, 24, 1) 0%,
+			rgba(10, 14, 24, 0.75) 40%,
+			transparent 100%
+		);
+		box-shadow: inset 10px 0 12px -8px rgba(255, 92, 51, 0.35);
 	}
 
 	.timeline-fade::after {
 		right: 0;
-		background: linear-gradient(to left, rgba(10, 14, 24, 0.95), transparent);
+		background: linear-gradient(
+			to left,
+			rgba(10, 14, 24, 1) 0%,
+			rgba(10, 14, 24, 0.75) 40%,
+			transparent 100%
+		);
+		box-shadow: inset -10px 0 12px -8px rgba(255, 92, 51, 0.35);
 	}
 
 	.timeline-fade.shadow-left::before,

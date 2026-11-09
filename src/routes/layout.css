@@ -100,7 +100,8 @@ body {
 	width: 100%;
 	max-width: 80rem;
 	margin-inline: auto;
-	padding-inline: 1rem;
+	padding-inline: max(1rem, env(safe-area-inset-left, 0px))
+		max(1rem, env(safe-area-inset-right, 0px));
 	overflow-x: clip;
 }
 
