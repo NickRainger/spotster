@@ -11,6 +11,8 @@
 		playerColors?: Record<string, string>;
 		onSelectSlot?: (slot: number) => void;
 		dimYears?: boolean;
+		/** Challenge mode: block locked + already-claimed slots (Hitster rule). */
+		challengePick?: boolean;
 	}
 
 	let {
@@ -21,7 +23,8 @@
 		claims = [],
 		playerColors = {},
 		onSelectSlot,
-		dimYears = false
+		dimYears = false,
+		challengePick = false
 	}: Props = $props();
 
 	let scroller: HTMLDivElement | undefined = $state();
@@ -30,6 +33,12 @@
 
 	function claimAt(slot: number) {
 		return claims.find((c) => c.slotIndex === slot);
+	}
+
+	function isBlocked(slot: number) {
+		if (!challengePick) return false;
+		if (lockedSlot != null && slot === lockedSlot) return true;
+		return claims.some((c) => c.slotIndex === slot);
 	}
 
 	function updateShadows() {
@@ -41,7 +50,6 @@
 		}
 		const max = el.scrollWidth - el.clientWidth;
 		const left = el.scrollLeft;
-		// 2px slack for subpixel rounding on mobile
 		canScrollLeft = left > 2;
 		canScrollRight = max > 2 && left < max - 2;
 	}
@@ -64,7 +72,6 @@
 	});
 
 	$effect(() => {
-		// Re-measure when card count / interactivity changes
 		void cards.length;
 		void interactive;
 		queueMicrotask(updateShadows);
@@ -83,20 +90,43 @@
 	>
 		{#each [...Array(cards.length + 1).keys()] as slot (slot)}
 			{@const claim = claimAt(slot)}
+			{@const blocked = isBlocked(slot)}
+			{@const isLocked = lockedSlot === slot}
+			{@const canPick = interactive && !blocked}
 			<button
 				type="button"
 				class="slot-btn relative flex min-w-10 shrink-0 flex-col items-center justify-center rounded-xl border border-dashed transition
-					{interactive ? 'cursor-pointer hover:border-primary hover:bg-primary/10' : 'cursor-default opacity-80'}
-					{selectedSlot === slot || lockedSlot === slot
-					? 'border-primary bg-primary/20 shadow-[0_0_20px_rgba(255,92,51,0.25)]'
-					: 'border-white/15 bg-white/5'}"
-				disabled={!interactive}
-				onclick={() => interactive && onSelectSlot?.(slot)}
-				aria-label={`Slot ${slot}`}
+					{canPick ? 'cursor-pointer hover:border-primary hover:bg-primary/10' : 'cursor-default'}
+					{selectedSlot === slot
+					? 'border-secondary bg-secondary/20 shadow-[0_0_20px_rgba(45,212,191,0.25)]'
+					: isLocked
+						? 'border-primary bg-primary/25 shadow-[0_0_16px_rgba(255,92,51,0.3)]'
+						: blocked
+							? 'border-white/10 bg-white/[0.03] opacity-45'
+							: 'border-white/15 bg-white/5'}
+					{!interactive && !isLocked ? 'opacity-80' : ''}"
+				disabled={!canPick}
+				onclick={() => canPick && onSelectSlot?.(slot)}
+				aria-label={isLocked
+					? `Slot ${slot} — lock van actieve speler`
+					: blocked
+						? `Slot ${slot} — al een viesje`
+						: `Slot ${slot}`}
+				title={isLocked
+					? 'Lock van de actieve speler — viesje moet ergens anders'
+					: blocked
+						? 'Al bezet door een viesje'
+						: undefined}
 			>
 				<span class="font-display text-xs text-white/50"
 					>{slot === 0 ? '<' : slot === cards.length ? '>' : '·'}</span
 				>
+				{#if isLocked}
+					<span
+						class="absolute -bottom-1 rounded px-1 text-[9px] font-bold uppercase tracking-wide text-primary"
+						>lock</span
+					>
+				{/if}
 				{#if claim}
 					<span
 						class="absolute -top-2 h-3 w-3 rounded-full ring-2 ring-base-100"

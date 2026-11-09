@@ -760,11 +760,14 @@ export class Room {
 			throw new Error('Eerst bevestigen na doorgeven');
 		}
 		if (p.tokens < 1) throw new Error('Geen viesjes');
-		if (this.turn.claims.some((c) => c.slotIndex === slotIndex)) {
-			throw new Error('Slot al geclaimd');
-		}
 		if (this.turn.claims.some((c) => c.playerId === p.id)) {
-			throw new Error('Al een viesje geplaatst');
+			throw new Error('Al een viesje geplaatst — max 1 per nummer');
+		}
+		if (this.turn.lockedSlot != null && slotIndex === this.turn.lockedSlot) {
+			throw new Error('Niet op dezelfde plek als de actieve speler — kies een ander slot');
+		}
+		if (this.turn.claims.some((c) => c.slotIndex === slotIndex)) {
+			throw new Error('Slot al geclaimd door een ander viesje');
 		}
 		// Viesjes liggen op het bord van de actieve speler (niet op dat van de challenger)
 		const active = this.players.find((x) => x.id === this.turn.activePlayerId);

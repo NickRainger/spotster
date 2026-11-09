@@ -203,6 +203,21 @@
 
 	function placeChallenge() {
 		if (challengeSlot == null) return;
+		const locked = snap.room?.turn.lockedSlot;
+		if (locked != null && challengeSlot === locked) {
+			gameClient.state.update((s) => ({
+				...s,
+				error: 'Niet op dezelfde plek als de actieve speler — kies een ander slot'
+			}));
+			return;
+		}
+		if (snap.room?.turn.claims.some((c) => c.slotIndex === challengeSlot)) {
+			gameClient.state.update((s) => ({
+				...s,
+				error: 'Dat slot heeft al een viesje'
+			}));
+			return;
+		}
 		gameClient.send({ type: 'challenge', slotIndex: challengeSlot, asPlayerId: asId() });
 		challengeSlot = null;
 	}
@@ -584,20 +599,29 @@
 							<Timeline
 								cards={activePlayer.timeline}
 								interactive={canChallenge}
+								challengePick
 								selectedSlot={canChallenge ? challengeSlot : null}
 								lockedSlot={room.turn.lockedSlot}
 								claims={room.turn.claims}
 								playerColors={colorMap}
 								onSelectSlot={(s) => {
-									if (canChallenge) challengeSlot = s;
+									if (!canChallenge) return;
+									if (room.turn.lockedSlot != null && s === room.turn.lockedSlot) return;
+									if (room.turn.claims.some((c) => c.slotIndex === s)) return;
+									challengeSlot = s;
 								}}
 							/>
 
 							{#if canChallenge}
+								<p class="text-xs text-white/50">
+									Max 1 viesje · niet op de <span class="text-primary">lock</span> van
+									{activePlayer.name}
+								</p>
 								<div class="flex flex-wrap gap-2">
 									<button
 										class="btn btn-secondary"
-										disabled={challengeSlot == null}
+										disabled={challengeSlot == null ||
+											challengeSlot === room.turn.lockedSlot}
 										onclick={placeChallenge}>Plaats viesje hier</button
 									>
 									{#if isSingle && myBoard}
