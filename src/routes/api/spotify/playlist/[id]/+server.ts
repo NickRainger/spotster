@@ -12,10 +12,6 @@ export const GET: RequestHandler = async ({ cookies, params }) => {
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : 'Tracks fetch failed';
 		const status = (e as { status?: number })?.status === 403 ? 403 : 502;
-		const hint =
-			status === 403
-				? ' Spotify Dashboard → Settings → User Management: voeg je account toe (dev mode), of kies een andere playlist.'
-				: '';
-		return json({ error: msg + hint }, { status });
+		return json({ error: msg }, { status });
 	}
 };

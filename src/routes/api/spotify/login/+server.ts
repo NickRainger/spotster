@@ -37,6 +37,10 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		code_challenge_method: 'S256',
 		code_challenge: challenge
 	});
+	// Force consent screen so scopes refresh after Spotify Dashboard changes
+	if (url.searchParams.get('force') === '1') {
+		params.set('show_dialog', 'true');
+	}
 
 	// SvelteKit 3: externe redirect vereist { external: true }, anders 500
 	throw redirect(302, `https://accounts.spotify.com/authorize?${params}`, {

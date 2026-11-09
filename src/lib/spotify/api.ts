@@ -11,6 +11,8 @@ export interface SpotifyPlaylistSummary {
 	image: string | null;
 	tracksTotal: number;
 	owner: string;
+	/** Spotify only returns playlist items for owner/collaborator playlists. */
+	canLoadTracks: boolean;
 }
 
 export interface SpotifyApiTrack {
@@ -119,6 +121,7 @@ async function fetchProfile(accessToken: string) {
 	});
 	if (!res.ok) throw new Error('Failed to fetch Spotify profile');
 	return (await res.json()) as {
+		id?: string;
 		display_name?: string;
 		product?: string;
 		email?: string;
@@ -187,24 +190,51 @@ type PlaylistPage = {
 		name: string;
 		images?: { url: string }[];
 		tracks?: { total: number };
-		owner?: { display_name?: string };
+		items?: { total: number };
+		collaborative?: boolean;
+		owner?: { id?: string; display_name?: string };
 	}[];
 	next: string | null;
 };
 
+type PlaylistItemRow = {
+	track?: Parameters<typeof mapTrack>[0] | boolean | null;
+	item?: { track?: Parameters<typeof mapTrack>[0] | null } | Parameters<typeof mapTrack>[0] | null;
+};
+
 type TracksPage = {
-	items: { track: Parameters<typeof mapTrack>[0] }[];
+	items: PlaylistItemRow[];
 	next: string | null;
 };
 
+function trackFromPlaylistRow(row: PlaylistItemRow): SpotifyApiTrack | null {
+	// Extended quota / classic: { track: TrackObject }
+	if (row.track && typeof row.track === 'object') return mapTrack(row.track);
+	// Dev-mode /items schema variants: { item: TrackObject } or { item: { track: TrackObject } }
+	const nested = row.item;
+	if (nested && typeof nested === 'object') {
+		if ('track' in nested && nested.track && typeof nested.track === 'object') {
+			return mapTrack(nested.track);
+		}
+		if ('id' in nested && 'uri' in nested) {
+			return mapTrack(nested as Parameters<typeof mapTrack>[0]);
+		}
+	}
+	return null;
+}
+
 export async function listPlaylists(accessToken: string): Promise<SpotifyPlaylistSummary[]> {
+	const me = await fetchProfile(accessToken).catch(() => ({ id: undefined }));
+	const myId = me.id;
+
 	const out: SpotifyPlaylistSummary[] = [
 		{
 			id: 'liked',
 			name: 'Liked Songs',
 			image: null,
 			tracksTotal: 0,
-			owner: 'Jij'
+			owner: 'Jij',
+			canLoadTracks: true
 		}
 	];
 	try {
@@ -219,18 +249,23 @@ export async function listPlaylists(accessToken: string): Promise<SpotifyPlaylis
 		const pageData: PlaylistPage = await apiGet<PlaylistPage>(accessToken, toApiPath(url));
 		for (const p of pageData.items ?? []) {
 			if (!p?.id) continue;
+			const owned = !!myId && p.owner?.id === myId;
 			out.push({
 				id: p.id,
 				name: p.name,
 				image: p.images?.[0]?.url ?? null,
-				tracksTotal: p.tracks?.total ?? 0,
-				owner: p.owner?.display_name ?? ''
+				tracksTotal: p.tracks?.total ?? p.items?.total ?? 0,
+				owner: p.owner?.display_name ?? '',
+				// Spotify 403's /items+/tracks unless you own (or truly collaborate — not detectable here)
+				canLoadTracks: owned
 			});
 		}
 		url = pageData.next ? toApiPath(pageData.next) : null;
 		if (out.length > 200) break;
 	}
-	return out;
+
+	// Owned / loadable first, then followed (Spotify 403's tracks on those)
+	return out.sort((a, b) => Number(b.canLoadTracks) - Number(a.canLoadTracks));
 }
 
 async function fetchTracksPage(
@@ -242,7 +277,7 @@ async function fetchTracksPage(
 	while (url) {
 		const pageData: TracksPage = await apiGet<TracksPage>(accessToken, toApiPath(url));
 		for (const row of pageData.items ?? []) {
-			const t = mapTrack(row.track);
+			const t = trackFromPlaylistRow(row);
 			if (t) out.push(t);
 		}
 		url = pageData.next ? toApiPath(pageData.next) : null;
@@ -282,11 +317,12 @@ export async function getPlaylistTracks(
 	}
 
 	const id = encodeURIComponent(playlistId);
-	// `market=from_token` often 403's on playlist tracks — prefer no market, then NL fallback
+	// Spotify Dev Mode prefers /items; Extended Quota still serves /tracks.
+	// 403 = not owner/collaborator (API policy) — not fixable client-side.
 	const attempts = [
+		`/playlists/${id}/items?limit=50&additional_types=track`,
 		`/playlists/${id}/tracks?limit=100&additional_types=track`,
-		`/playlists/${id}/tracks?limit=100&market=NL&additional_types=track`,
-		`/playlists/${id}/tracks?limit=100`
+		`/playlists/${id}/tracks?limit=100&market=NL&additional_types=track`
 	];
 
 	let lastErr: unknown;
@@ -299,9 +335,11 @@ export async function getPlaylistTracks(
 			if (status !== 403 && status !== 404) throw e;
 		}
 	}
-	throw lastErr instanceof Error
-		? lastErr
-		: new Error('Playlist tracks niet beschikbaar (403). Check Spotify Dashboard → Users.');
+	const err = new Error(
+		'Spotify blokkeert tracks van deze playlist (403). Alleen playlists die jij bezit of co-edit werken — kies Liked Songs of een eigen lijst.'
+	) as Error & { status?: number };
+	err.status = 403;
+	throw err;
 }
 
 export async function searchTracks(accessToken: string, q: string): Promise<SpotifyApiTrack[]> {
@@ -333,6 +371,8 @@ export async function searchPlaylists(
 			name: p.name,
 			image: p.images?.[0]?.url ?? null,
 			tracksTotal: p.tracks?.total ?? 0,
-			owner: p.owner?.display_name ?? ''
+			owner: p.owner?.display_name ?? '',
+			// Search hits are almost never owned → tracks endpoint 403's
+			canLoadTracks: false
 		}));
 }

@@ -23,6 +23,7 @@
 		tracksTotal: number;
 		image: string | null;
 		owner?: string;
+		canLoadTracks?: boolean;
 	};
 
 	type TrackHit = {
@@ -55,12 +56,16 @@
 
 	const filteredPlaylists = $derived.by(() => {
 		const q = playlistQuery.trim().toLowerCase();
-		if (!q) return playlists;
-		return playlists.filter(
-			(p) =>
-				p.name.toLowerCase().includes(q) ||
-				(p.owner ?? '').toLowerCase().includes(q)
-		);
+		const base = playlists.filter((p) => p.canLoadTracks !== false);
+		const followed = playlists.filter((p) => p.canLoadTracks === false);
+		const pool = q
+			? playlists.filter(
+					(p) =>
+						p.name.toLowerCase().includes(q) ||
+						(p.owner ?? '').toLowerCase().includes(q)
+				)
+			: [...base, ...followed];
+		return pool;
 	});
 
 	async function refreshSession() {
@@ -95,7 +100,12 @@
 		}
 	}
 
-	async function selectPlaylist(id: string, name: string) {
+	async function selectPlaylist(id: string, name: string, canLoad = true) {
+		if (!canLoad && id !== 'liked') {
+			error =
+				'Spotify geeft geen tracks van playlists die je niet bezit. Kies Liked Songs of een lijst van jou (geen gevolgd/zoekresultaat).';
+			return;
+		}
 		loading = true;
 		error = null;
 		try {
@@ -288,6 +298,11 @@
 					await refreshSession();
 				}}>Disconnect</button
 			>
+			<a
+				class="btn btn-ghost btn-xs"
+				href="/api/spotify/login?force=1&returnTo={encodeURIComponent(`/room/${roomCode}`)}"
+				>Reconnect</a
+			>
 			<button
 				class="btn btn-ghost btn-xs"
 				disabled={disabled}
@@ -297,6 +312,10 @@
 				}}>Unlock audio</button
 			>
 		</div>
+		<p class="text-xs text-white/40">
+			Tracks laden alleen van <strong class="text-white/60">Liked Songs</strong> en playlists die jij
+			bezit (Spotify-API-regel).
+		</p>
 	{/if}
 
 	{#if error}
@@ -327,12 +346,16 @@
 			{/if}
 			<ul class="max-h-64 space-y-1.5 overflow-y-auto">
 				{#each playlistHits.length ? playlistHits : filteredPlaylists as p (p.id + p.name)}
+					{@const loadable = p.id === 'liked' || p.canLoadTracks !== false}
 					<li>
 						<button
 							type="button"
-							class="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 text-left hover:border-primary/40 disabled:opacity-50"
+							class="flex w-full items-center gap-3 rounded-xl border px-2.5 py-2 text-left disabled:opacity-50
+								{loadable
+								? 'border-white/10 bg-white/5 hover:border-primary/40'
+								: 'border-white/5 bg-white/[0.03] opacity-70'}"
 							disabled={disabled || loading}
-							onclick={() => selectPlaylist(p.id, p.name)}
+							onclick={() => selectPlaylist(p.id, p.name, loadable)}
 						>
 							{#if p.image}
 								<img
@@ -352,6 +375,9 @@
 								<span class="block truncate font-medium">{p.name}</span>
 								<span class="block truncate text-xs text-white/40">
 									{p.owner ? `${p.owner} · ` : ''}{p.tracksTotal || '—'} tracks
+									{#if !loadable}
+										· alleen metadata (geen tracks)
+									{/if}
 								</span>
 							</span>
 						</button>
