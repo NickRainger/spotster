@@ -772,7 +772,10 @@ export class Room {
 		if (this.turn.claims.some((c) => c.playerId === p.id)) {
 			throw new Error('Al een viesje geplaatst');
 		}
-		if (slotIndex < 0 || slotIndex > p.timeline.length) throw new Error('Ongeldig slot');
+		// Viesjes liggen op het bord van de actieve speler (niet op dat van de challenger)
+		const active = this.players.find((x) => x.id === this.turn.activePlayerId);
+		if (!active) throw new Error('Geen actieve speler');
+		if (slotIndex < 0 || slotIndex > active.timeline.length) throw new Error('Ongeldig slot');
 		p.tokens -= 1;
 		this.turn.claims.push({ playerId: p.id, slotIndex, at: Date.now() });
 		if (this.playMode === 'single') {

@@ -445,24 +445,28 @@
 
 				{#if !privacyLocked}
 					{@const myBoard = isSingle ? seatPlayer : me}
-					{@const myBoardIsTurn =
-						!!myBoard &&
-						(myBoard.id === room.turn.activePlayerId ||
-							(phase === 'CHALLENGE_WINDOW' && myBoard.id === room.challengeSeatId))}
+					{@const myBoardIsActive =
+						!!myBoard && myBoard.id === room.turn.activePlayerId}
 					{@const canGuess =
 						!!myBoard &&
-						myBoard.id === room.turn.activePlayerId &&
+						myBoardIsActive &&
 						(phase === 'GUESSING' || phase === 'HOST_PLAYING')}
 					{@const canChallenge =
 						phase === 'CHALLENGE_WINDOW' &&
+						!!activePlayer &&
 						!!myBoard &&
-						((isSingle && isChallengeSeat) ||
-							(!isSingle && me != null && me.id !== room.turn.activePlayerId))}
+						!myBoardIsActive &&
+						((isSingle && isChallengeSeat) || !isSingle) &&
+						myBoard.tokens > 0 &&
+						!room.turn.claims.some((c) => c.playerId === myBoard.id)}
 					{@const others = room.players.filter(
-						(p) => room.turnOrder.includes(p.id) && p.id !== myBoard?.id
+						(p) =>
+							room.turnOrder.includes(p.id) &&
+							p.id !== myBoard?.id &&
+							!(phase === 'CHALLENGE_WINDOW' && p.id === room.turn.activePlayerId)
 					)}
 
-					<!-- JOUW BORD — altijd de primaire focus -->
+					<!-- JOUW BORD -->
 					{#if myBoard}
 						<section
 							class="relative space-y-3 border-y-2 py-5"
@@ -480,8 +484,10 @@
 									<h2 class="font-display text-3xl sm:text-4xl">{myBoard.name}</h2>
 									<p class="text-sm text-white/45">
 										{myBoard.timeline.length}/{room.settings.winAt} kaarten
-										{#if myBoardIsTurn}
+										{#if myBoardIsActive && phase !== 'CHALLENGE_WINDOW'}
 											· <span class="text-primary">jij bent aan de beurt</span>
+										{:else if myBoardIsActive && phase === 'CHALLENGE_WINDOW'}
+											· <span class="text-white/50">wacht op viesjes van anderen</span>
 										{/if}
 									</p>
 								</div>
@@ -495,23 +501,13 @@
 
 							<Timeline
 								cards={myBoard.timeline}
-								interactive={canGuess ||
-									(canChallenge &&
-										myBoard.tokens > 0 &&
-										!room.turn.claims.some((c) => c.playerId === myBoard.id))}
-								selectedSlot={canGuess
-									? selectedSlot
-									: canChallenge
-										? challengeSlot
-										: null}
-								lockedSlot={myBoard.id === room.turn.activePlayerId
-									? room.turn.lockedSlot
-									: null}
-								claims={room.turn.claims.filter((c) => c.playerId === myBoard.id)}
+								interactive={canGuess}
+								selectedSlot={canGuess ? selectedSlot : null}
+								lockedSlot={myBoardIsActive ? room.turn.lockedSlot : null}
+								claims={myBoardIsActive ? room.turn.claims : []}
 								playerColors={colorMap}
 								onSelectSlot={(s) => {
 									if (canGuess) selectedSlot = s;
-									else if (canChallenge) challengeSlot = s;
 								}}
 							/>
 
@@ -528,37 +524,9 @@
 										Skip (−{room.settings.skipCost})
 									</button>
 								</div>
-							{:else if canChallenge}
-								<div class="space-y-2">
-									<div class="flex flex-wrap items-center justify-between gap-2">
-										<p class="text-sm text-white/60">
-											Challenge: viesje op <em>jouw</em> bord
-										</p>
-										{#if challengeLeft > 0}
-											<span class="font-display text-2xl text-secondary">{challengeLeft}s</span>
-										{/if}
-									</div>
-									<div class="flex flex-wrap gap-2">
-										<button
-											class="btn btn-secondary"
-											disabled={challengeSlot == null || myBoard.tokens < 1}
-											onclick={placeChallenge}>Plaats viesje</button
-										>
-										{#if isSingle}
-											<button
-												class="btn btn-outline"
-												onclick={() =>
-													gameClient.send({
-														type: 'skip_challenge',
-														asPlayerId: myBoard.id
-													})}>Geen viesje</button
-											>
-										{/if}
-									</div>
-								</div>
-							{:else if phase === 'CHALLENGE_WINDOW' && !isSingle && me?.id === room.turn.activePlayerId}
+							{:else if phase === 'CHALLENGE_WINDOW' && myBoardIsActive}
 								<p class="text-sm text-white/50">
-									Jouw lock staat — anderen mogen challengen
+									Jouw lock staat — viesjes komen op <em>jouw</em> bord
 									{#if challengeLeft > 0}
 										<span class="font-display text-secondary"> · {challengeLeft}s</span>
 									{/if}
@@ -567,8 +535,65 @@
 						</section>
 					{/if}
 
-					<!-- Beurt van iemand anders (alleen ter referentie, niet jouw bord) -->
-					{#if !isSingle && activePlayer && me && activePlayer.id !== me.id && (phase === 'HOST_PLAYING' || phase === 'GUESSING' || phase === 'GUESS_LOCKED')}
+					<!-- CHALLENGE: viesjes op bord van actieve speler (niet op jouw eigen bord) -->
+					{#if phase === 'CHALLENGE_WINDOW' && activePlayer && !privacyLocked && !myBoardIsActive}
+						<section
+							class="space-y-3 rounded-2xl border-2 border-secondary/40 bg-secondary/5 p-4 sm:p-5"
+							aria-label="Challenge op bord van actieve speler"
+						>
+							<div class="flex flex-wrap items-end justify-between gap-3">
+								<div>
+									<p class="text-xs font-semibold uppercase tracking-[0.3em] text-secondary">
+										Challenge · bord van {activePlayer.name}
+									</p>
+									<h2 class="font-display text-2xl sm:text-3xl">{activePlayer.name}</h2>
+									<p class="text-sm text-white/55">
+										Leg een viesje op een slot op <strong>dit</strong> bord (waar jij denkt dat het
+										nummer hoort) — niet op jouw eigen bord.
+									</p>
+								</div>
+								{#if challengeLeft > 0}
+									<span class="font-display text-3xl text-secondary">{challengeLeft}s</span>
+								{/if}
+							</div>
+
+							<Timeline
+								cards={activePlayer.timeline}
+								interactive={canChallenge}
+								selectedSlot={canChallenge ? challengeSlot : null}
+								lockedSlot={room.turn.lockedSlot}
+								claims={room.turn.claims}
+								playerColors={colorMap}
+								onSelectSlot={(s) => {
+									if (canChallenge) challengeSlot = s;
+								}}
+							/>
+
+							{#if canChallenge}
+								<div class="flex flex-wrap gap-2">
+									<button
+										class="btn btn-secondary"
+										disabled={challengeSlot == null}
+										onclick={placeChallenge}>Plaats viesje hier</button
+									>
+									{#if isSingle && myBoard}
+										<button
+											class="btn btn-outline"
+											onclick={() =>
+												gameClient.send({
+													type: 'skip_challenge',
+													asPlayerId: myBoard.id
+												})}>Geen viesje</button
+										>
+									{/if}
+								</div>
+							{:else if isSingle && !isChallengeSeat}
+								<p class="text-sm text-white/50">Wachten op challenge-seat…</p>
+							{:else if myBoard && room.turn.claims.some((c) => c.playerId === myBoard.id)}
+								<p class="text-sm text-secondary">Viesje geplaatst — wachten…</p>
+							{/if}
+						</section>
+					{:else if !isSingle && activePlayer && me && activePlayer.id !== me.id && (phase === 'HOST_PLAYING' || phase === 'GUESSING' || phase === 'GUESS_LOCKED')}
 						<section class="opacity-70" aria-label="Bord van actieve speler">
 							<p class="mb-1 text-xs font-semibold uppercase tracking-[0.25em] text-white/35">
 								Nu aan zet · niet jouw bord
@@ -589,11 +614,7 @@
 						</section>
 					{/if}
 
-					{#if phase === 'CHALLENGE_WINDOW' && isSingle && !isChallengeSeat}
-						<p class="text-sm text-white/50">Wachten op challenge-seat…</p>
-					{/if}
-
-					<!-- Andere spelers — secundair -->
+					<!-- Andere spelers — secundair (actieve tijdens challenge zit hierboven) -->
 					{#if others.length}
 						<section class="space-y-3 pt-2" aria-label="Andere spelers">
 							<p class="text-xs font-semibold uppercase tracking-[0.3em] text-white/35">
@@ -601,34 +622,17 @@
 							</p>
 							<div class="grid gap-4 sm:grid-cols-2">
 								{#each others as p}
-									<div
-										class="border-l-2 pl-3 {p.id === room.turn.activePlayerId
-											? 'border-white/40'
-											: 'border-white/15'}"
-										style={p.id === room.turn.activePlayerId
-											? `border-color:${p.color}`
-											: undefined}
-									>
+									<div class="border-l-2 border-white/15 pl-3">
 										<div class="mb-1 flex items-center gap-2">
 											<span class="h-2 w-2 rounded-full" style="background:{p.color}"></span>
 											<span class="text-sm font-semibold text-white/75">{p.name}</span>
-											{#if p.id === room.turn.activePlayerId}
-												<span class="text-[10px] uppercase tracking-wider text-primary"
-													>beurt</span
-												>
-											{/if}
 											<span class="ml-auto text-xs text-white/35"
 												>{p.timeline.length}/{room.settings.winAt} · {p.tokens}◆</span
 											>
 										</div>
-										{#if showAllTimelines || p.id === room.turn.activePlayerId}
-											<div class="scale-[0.92] origin-left opacity-80">
-												<Timeline
-													cards={p.timeline}
-													claims={room.turn.claims.filter((c) => c.playerId === p.id)}
-													playerColors={colorMap}
-													dimYears={p.id !== room.turn.activePlayerId}
-												/>
+										{#if showAllTimelines}
+											<div class="origin-left scale-[0.92] opacity-80">
+												<Timeline cards={p.timeline} dimYears />
 											</div>
 										{:else}
 											<p class="py-3 text-xs text-white/30">verborgen · privacy</p>

@@ -24,6 +24,14 @@ export function isSlotCorrect(timeline: TimelineCard[], slotIndex: number, year:
 	return true; // empty timeline — any year ok
 }
 
+/** First valid insert index for `year` on a timeline (used when stealing onto challenger's board). */
+export function firstCorrectSlot(timeline: TimelineCard[], year: number): number {
+	for (let i = 0; i <= timeline.length; i++) {
+		if (isSlotCorrect(timeline, i, year)) return i;
+	}
+	return timeline.length;
+}
+
 export function insertCard(timeline: TimelineCard[], slotIndex: number, card: TimelineCard): TimelineCard[] {
 	const next = [...timeline];
 	next.splice(slotIndex, 0, card);
@@ -60,18 +68,19 @@ export function resolveTurn(
 		activeKept = true;
 		message = `${active.name} plaatste goed — ${track.year}!`;
 	} else {
-		// First correct challenger (by server timestamp) steals
+		// Claims sit on the *active* player's board (where challengers say the track belongs).
+		// First challenger who pointed at a correct slot on that board steals onto their own timeline.
 		const sorted = [...claims].sort((a, b) => a.at - b.at);
 		for (const claim of sorted) {
 			const challenger = nextPlayers.find((p) => p.id === claim.playerId);
 			if (!challenger || claim.playerId === active.id) continue;
-			if (isSlotCorrect(challenger.timeline, claim.slotIndex, track.year)) {
-				const ci = nextPlayers.findIndex((p) => p.id === claim.playerId);
-				nextPlayers[ci].timeline = insertCard(nextPlayers[ci].timeline, claim.slotIndex, card);
-				stolenBy = claim.playerId;
-				message = `${challenger.name} steelt met een viesje! (${track.year})`;
-				break;
-			}
+			if (!isSlotCorrect(active.timeline, claim.slotIndex, track.year)) continue;
+			const ci = nextPlayers.findIndex((p) => p.id === claim.playerId);
+			const stealSlot = firstCorrectSlot(nextPlayers[ci].timeline, track.year);
+			nextPlayers[ci].timeline = insertCard(nextPlayers[ci].timeline, stealSlot, card);
+			stolenBy = claim.playerId;
+			message = `${challenger.name} steelt met een viesje! (${track.year})`;
+			break;
 		}
 		if (!stolenBy) {
 			message = `Mis — ${track.title} is uit ${track.year}. Kaart weg.`;
