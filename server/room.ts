@@ -16,6 +16,7 @@ import type {
 	Player,
 	RoomPublic,
 	ServerMessage,
+	TitleConfirmState,
 	Track
 } from '../src/lib/game/types.ts';
 
@@ -53,8 +54,8 @@ export class Room {
 	};
 	handoff: HandoffState | null = null;
 	challengeSeatId: string | null = null;
-	/** Pending host confirm for title/artist → viesje (pauses timers + music) */
-	titleConfirm: { playerId: string; playerName: string; requestedAt: number } | null = null;
+	/** Pending title/artist check — hard-pauses timers + music until resolved */
+	titleConfirm: TitleConfirmState | null = null;
 	private challengeQueue: string[] = [];
 	/** Device owner connection playerId (host) — acts for local seats in single mode */
 	private deviceOwnerId: string | null = null;
@@ -63,6 +64,10 @@ export class Room {
 	/** Remaining ms for challenge timer when paused for titleConfirm */
 	private pausedChallengeMs: number | null = null;
 	private challengeTimerStartedAt: number | null = null;
+	/** Where to continue after titleConfirm resolves */
+	private pausedFlow: 'check_win' | 'next_turn' | 'challenge' | null = null;
+	/** Correct player already used their post-reveal claim this turn */
+	private titleClaimDone = false;
 	private turnIndexSeed = 0;
 
 	constructor(code?: string, settings?: Partial<GameSettings>) {
@@ -141,7 +146,13 @@ export class Room {
 			spotify: { ...this.spotify },
 			challengeSeatId: this.challengeSeatId,
 			handoff: this.handoff ? { ...this.handoff } : null,
-			titleConfirm: this.titleConfirm ? { ...this.titleConfirm } : null
+			titleConfirm: this.titleConfirm
+				? {
+						...this.titleConfirm,
+						voterIds: [...this.titleConfirm.voterIds],
+						votes: this.titleConfirm.votes.map((v) => ({ ...v }))
+					}
+				: null
 		};
 	}
 
@@ -213,6 +224,9 @@ export class Room {
 					break;
 				case 'token_earn_deny':
 					this.tokenEarnDeny(conn);
+					break;
+				case 'token_vote':
+					this.tokenVote(conn, msg.vote, msg.asPlayerId);
 					break;
 				case 'request_token':
 					this.requestToken(conn, msg.asPlayerId);
@@ -649,6 +663,8 @@ export class Room {
 	}
 
 	private schedule(key: string, ms: number, fn: () => void) {
+		// Hard stop: never arm flow timers while a viesje-check is open
+		if (this.titleConfirm) return;
 		const prev = this.timers.get(key);
 		if (prev) clearTimeout(prev);
 		if (key === 'challenge') this.challengeTimerStartedAt = Date.now();
@@ -657,15 +673,23 @@ export class Room {
 			setTimeout(() => {
 				this.timers.delete(key);
 				if (key === 'challenge') this.challengeTimerStartedAt = null;
+				if (this.titleConfirm) return;
 				fn();
 			}, ms)
 		);
 	}
 
-	/** Freeze auto/challenge timers while host confirms a title/artist viesje. */
+	/** Freeze auto/challenge timers — music pause is client-side via titleConfirm. */
 	private pauseForTitleConfirm() {
+		if (this.phase === 'RESOLVE') this.pausedFlow = 'check_win';
+		else if (this.phase === 'CHECK_WIN') this.pausedFlow = 'next_turn';
+		else if (this.phase === 'CHALLENGE_WINDOW') this.pausedFlow = 'challenge';
+		else this.pausedFlow = null;
+
 		const challengeTimer = this.timers.get('challenge');
 		if (challengeTimer && this.challengeTimerStartedAt != null && this.turn.challengeEndsAt) {
+			this.pausedChallengeMs = Math.max(0, this.turn.challengeEndsAt - Date.now());
+		} else if (this.turn.challengeEndsAt && this.turn.challengeEndsAt > Date.now()) {
 			this.pausedChallengeMs = Math.max(0, this.turn.challengeEndsAt - Date.now());
 		} else {
 			this.pausedChallengeMs = null;
@@ -675,25 +699,85 @@ export class Room {
 	}
 
 	private resumeAfterTitleConfirm() {
+		const flow = this.pausedFlow;
+		this.pausedFlow = null;
 		const remaining = this.pausedChallengeMs;
 		this.pausedChallengeMs = null;
+
+		if (flow === 'check_win' && this.phase === 'RESOLVE') {
+			this.schedule('auto', 500, () => this.beginCheckWin());
+			return;
+		}
+		if (flow === 'next_turn' && this.phase === 'CHECK_WIN') {
+			if (this.winnerId) {
+				this.schedule('auto', 400, () => {
+					this.phase = 'GAME_OVER';
+					this.broadcast();
+				});
+			} else {
+				const next = nextPlayerId(this.turnOrder, this.turn.activePlayerId);
+				this.schedule('auto', 500, () => this.beginWaitingTurn(next));
+			}
+			return;
+		}
 		if (
+			flow === 'challenge' &&
 			remaining != null &&
 			remaining > 200 &&
 			this.phase === 'CHALLENGE_WINDOW' &&
 			(this.settings.challengeMode === 'timer' || this.settings.challengeMode === 'both')
 		) {
 			this.turn.challengeEndsAt = Date.now() + remaining;
-			this.schedule('challenge', remaining, () => this.beginReveal());
+			this.schedule('challenge', remaining, () => {
+				if (this.playMode === 'single') this.advanceChallengeSeat();
+				else this.beginReveal();
+			});
 		}
 	}
 
 	private assertFlowNotPaused() {
 		if (this.titleConfirm) {
+			const mode = this.titleConfirm.mode === 'votes' ? 'stemming' : 'host-check';
 			throw new Error(
-				`Gepauzeerd: host moet titel/artiest van ${this.titleConfirm.playerName} nog bevestigen`
+				`Gepauzeerd (${mode}): wacht tot titel/artiest van ${this.titleConfirm.playerName} is beslist`
 			);
 		}
+	}
+
+	/** Player who placed correctly this turn (active kept or successful steal). */
+	private correctClaimantId(): string | null {
+		const r = this.turn.lastResolve;
+		if (!r) return null;
+		if (r.stolenBy) return r.stolenBy;
+		if (r.activeKept || r.correct) return this.turn.activePlayerId;
+		return null;
+	}
+
+	private buildTitleConfirm(player: Player, mode: 'host' | 'votes'): TitleConfirmState {
+		// Votes: every playing seat except claimant. Non-playing host ∉ turnOrder → no vote.
+		// Majority = first to ceil(table/2) — e.g. 6 spelers → eerste tot 3.
+		const voterIds = mode === 'votes' ? this.turnOrder.filter((id) => id !== player.id) : [];
+		const majorityNeeded =
+			mode === 'votes' ? Math.max(1, Math.ceil(this.turnOrder.length / 2)) : 0;
+		return {
+			playerId: player.id,
+			playerName: player.name,
+			requestedAt: Date.now(),
+			mode,
+			voterIds,
+			votes: [],
+			majorityNeeded
+		};
+	}
+
+	private grantTitleToken(playerId: string, reason: string) {
+		const target = this.players.find((p) => p.id === playerId);
+		if (!target) return;
+		if (target.tokens < this.settings.tokensMax) target.tokens += 1;
+		this.sendTo(target.id, {
+			type: 'notice',
+			message: `${reason} — +1 viesje (nu ${target.tokens}).`
+		});
 	}
 
 	private beginWaitingTurn(playerId: string | null) {
@@ -702,6 +786,8 @@ export class Room {
 		}
 		this.titleConfirm = null;
 		this.pausedChallengeMs = null;
+		this.pausedFlow = null;
+		this.titleClaimDone = false;
 		this.phase = 'WAITING_TURN';
 		this.turn = { ...emptyTurn(), activePlayerId: playerId };
 		this.challengeSeatId = null;
@@ -1029,48 +1115,42 @@ export class Room {
 		}
 		this.titleConfirm = null;
 		this.pausedChallengeMs = null;
+		this.pausedFlow = null;
 		this.clearTimers();
 		this.phase = phase;
 		this.broadcast();
 	}
 
+	/** Host-mode only: ja → +1 viesje, hervat flow. */
 	private tokenEarnApprove(conn: Conn, playerId: string) {
 		this.requireHost(conn);
-		if (this.settings.tokenEarnMode === 'off') throw new Error('Token verdienen staat uit');
-		const target = this.players.find((p) => p.id === playerId);
-		if (!target) throw new Error('Speler niet gevonden');
-		if (target.tokens >= this.settings.tokensMax) throw new Error('Max viesjes bereikt');
-
-		// Prefer resolving an open confirm for this player
-		if (this.titleConfirm && this.titleConfirm.playerId !== playerId) {
-			throw new Error(
-				`Er wacht nog een bevestiging voor ${this.titleConfirm.playerName} — keur die eerst goed of af`
-			);
+		if (this.settings.tokenEarnMode !== 'host') {
+			throw new Error('Alleen in host-modus beslist de host');
 		}
-
-		target.tokens += 1;
-		const hadConfirm = !!this.titleConfirm;
+		if (!this.titleConfirm) throw new Error('Geen openstaande claim');
+		if (this.titleConfirm.playerId !== playerId) {
+			throw new Error(`Openstaande claim is van ${this.titleConfirm.playerName}`);
+		}
+		const pid = this.titleConfirm.playerId;
 		this.titleConfirm = null;
-		if (hadConfirm) this.resumeAfterTitleConfirm();
+		this.grantTitleToken(pid, 'Host zei ja (titel/artiest)');
+		this.resumeAfterTitleConfirm();
 		this.broadcast();
-		this.sendTo(target.id, {
-			type: 'notice',
-			message: `Host keurde titel/artiest goed — je krijgt +1 viesje (nu ${target.tokens}).`
-		});
 	}
 
+	/** Host-mode only: nee → geen viesje, hervat flow. */
 	private tokenEarnDeny(conn: Conn) {
 		this.requireHost(conn);
-		if (!this.titleConfirm) throw new Error('Geen openstaande bevestiging');
+		if (this.settings.tokenEarnMode !== 'host') {
+			throw new Error('Alleen in host-modus beslist de host');
+		}
+		if (!this.titleConfirm) throw new Error('Geen openstaande claim');
 		const name = this.titleConfirm.playerName;
 		const pid = this.titleConfirm.playerId;
 		this.titleConfirm = null;
 		this.resumeAfterTitleConfirm();
 		this.broadcast();
-		this.sendTo(pid, {
-			type: 'notice',
-			message: 'Host wees titel/artiest af — geen viesje.'
-		});
+		this.sendTo(pid, { type: 'notice', message: 'Host zei nee — geen viesje.' });
 		for (const c of this.conns) {
 			if (c.playerId && c.playerId !== pid) {
 				c.send({ type: 'notice', message: `Host wees ${name} af — spel gaat verder.` });
@@ -1078,47 +1158,101 @@ export class Room {
 		}
 	}
 
+	/** Votes-mode: majority first-to-N voor of tegen. */
+	private tokenVote(conn: Conn, vote: 'for' | 'against', asPlayerId?: string) {
+		const voter = this.requireActor(conn, asPlayerId);
+		if (!this.titleConfirm || this.titleConfirm.mode !== 'votes') {
+			throw new Error('Geen openstaande stemming');
+		}
+		if (!this.titleConfirm.voterIds.includes(voter.id)) {
+			throw new Error('Jij stemt niet mee (claimant of niet-meespelende host)');
+		}
+		if (this.titleConfirm.votes.some((v) => v.playerId === voter.id)) {
+			throw new Error('Je hebt al gestemd');
+		}
+		this.titleConfirm.votes.push({ playerId: voter.id, vote });
+
+		const need = this.titleConfirm.majorityNeeded;
+		const forCount = this.titleConfirm.votes.filter((v) => v.vote === 'for').length;
+		const againstCount = this.titleConfirm.votes.filter((v) => v.vote === 'against').length;
+		const pid = this.titleConfirm.playerId;
+		const name = this.titleConfirm.playerName;
+
+		if (forCount >= need) {
+			this.titleConfirm = null;
+			this.grantTitleToken(pid, 'Meerderheid zei ja (titel/artiest)');
+			this.resumeAfterTitleConfirm();
+			this.broadcast();
+			return;
+		}
+		if (againstCount >= need) {
+			this.titleConfirm = null;
+			this.resumeAfterTitleConfirm();
+			this.broadcast();
+			this.sendTo(pid, { type: 'notice', message: 'Meerderheid zei nee — geen viesje.' });
+			for (const c of this.conns) {
+				if (c.playerId && c.playerId !== pid) {
+					c.send({ type: 'notice', message: `Nee voor ${name} — spel gaat verder.` });
+				}
+			}
+			return;
+		}
+		this.broadcast();
+	}
+
+	/**
+	 * Post-reveal only: correct player claims title/artist → hard pause until
+	 * host yes/no (host-mode) or majority votes (votes-mode).
+	 */
 	private requestToken(conn: Conn, asPlayerId?: string) {
 		const p = this.requireActor(conn, asPlayerId);
 		if (this.settings.tokenEarnMode === 'off') throw new Error('Token verdienen staat uit');
-		if (this.phase === 'lobby' || this.phase === 'GAME_OVER') {
-			throw new Error('Alleen tijdens het spel');
+		if (this.phase !== 'RESOLVE' && this.phase !== 'CHECK_WIN') {
+			throw new Error('Claim alleen ná de reveal');
 		}
+		const claimantId = this.correctClaimantId();
+		if (!claimantId) throw new Error('Alleen wie het nummer correct had mag claimen');
+		if (p.id !== claimantId) throw new Error('Alleen de correcte speler mag claimen');
+		if (this.titleClaimDone) throw new Error('Je hebt al geclaimd deze beurt');
 		if (p.tokens >= this.settings.tokensMax) throw new Error('Max viesjes bereikt');
+		if (this.titleConfirm) {
+			throw new Error(`Er loopt al een check voor ${this.titleConfirm.playerName}`);
+		}
 
-		if (this.settings.tokenEarnMode === 'votes') {
-			// Stub: auto-grant for MVP when votes mode (full vote UI later)
-			p.tokens += 1;
+		const mode = this.settings.tokenEarnMode === 'votes' ? 'votes' : 'host';
+		this.titleClaimDone = true;
+		this.titleConfirm = this.buildTitleConfirm(p, mode);
+		this.pauseForTitleConfirm();
+
+		// Edge: votes mode but nobody else to vote → treat as ja
+		if (mode === 'votes' && this.titleConfirm.voterIds.length === 0) {
+			const pid = this.titleConfirm.playerId;
+			this.titleConfirm = null;
+			this.grantTitleToken(pid, 'Geen andere stemmers — automatisch ja');
+			this.resumeAfterTitleConfirm();
 			this.broadcast();
 			return;
 		}
 
-		// host mode: freeze game until host confirms title/artist
-		if (this.titleConfirm) {
-			throw new Error(
-				`Er loopt al een bevestiging voor ${this.titleConfirm.playerName} — wacht op de host`
-			);
-		}
-
-		this.titleConfirm = {
-			playerId: p.id,
-			playerName: p.name,
-			requestedAt: Date.now()
-		};
-		this.pauseForTitleConfirm();
 		this.broadcast();
-
-		const host = this.players.find((x) => x.isHost);
-		if (host) {
-			this.sendTo(host.id, {
+		if (mode === 'host') {
+			const host = this.players.find((x) => x.isHost);
+			if (host) {
+				this.sendTo(host.id, {
+					type: 'notice',
+					message: `${p.name} claimt titel/artiest — alleen jij beslist ja/nee. Spel/muziek hard gepauzeerd.`
+				});
+			}
+			this.sendTo(p.id, {
 				type: 'notice',
-				message: `${p.name} claimt titel/artiest — keur goed of af. Spel/muziek staan gepauzeerd.`
+				message: 'Claim open — wacht op host ja/nee. Spel pauzeert.'
+			});
+		} else {
+			this.sendTo(p.id, {
+				type: 'notice',
+				message: `Claim open — eerste tot ${this.titleConfirm.majorityNeeded} stemmen wint. Spel pauzeert.`
 			});
 		}
-		this.sendTo(p.id, {
-			type: 'notice',
-			message: 'Wachten op host… zeg titel/artiest hardop. Spel pauzeert tot bevestiging.'
-		});
 	}
 }
 

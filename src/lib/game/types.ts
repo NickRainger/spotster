@@ -134,14 +134,27 @@ export interface RoomPublic {
 	/** Single-device: pass-phone overlay */
 	handoff: HandoffState | null;
 	/**
-	 * Host must confirm title/artist for a viesje.
-	 * While set, timers are frozen and clients should pause music.
+	 * Pending title/artist viesje check (host approve or player votes).
+	 * While set: timers frozen, flow blocked, clients must hard-pause music.
 	 */
-	titleConfirm: {
-		playerId: string;
-		playerName: string;
-		requestedAt: number;
-	} | null;
+	titleConfirm: TitleConfirmState | null;
+}
+
+export interface TitleConfirmVote {
+	playerId: string;
+	vote: 'for' | 'against';
+}
+
+export interface TitleConfirmState {
+	playerId: string;
+	playerName: string;
+	requestedAt: number;
+	mode: 'host' | 'votes';
+	/** Who may vote (playing seats except claimant; non-playing host excluded) */
+	voterIds: string[];
+	votes: TitleConfirmVote[];
+	/** First side to reach this many wins (majority) */
+	majorityNeeded: number;
 }
 
 export type ClientMessage =
@@ -164,6 +177,7 @@ export type ClientMessage =
 	| { type: 'host_force_phase'; phase: GamePhase }
 	| { type: 'token_earn_approve'; playerId: string }
 	| { type: 'token_earn_deny' }
+	| { type: 'token_vote'; vote: 'for' | 'against'; asPlayerId?: string }
 	| { type: 'request_token'; asPlayerId?: string }
 	| { type: 'set_play_mode'; mode: 'multi' | 'single' }
 	| { type: 'add_local_player'; name: string }

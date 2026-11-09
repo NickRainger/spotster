@@ -446,8 +446,11 @@ export class HostSpotifyPlayer {
 	}
 
 	async pause() {
+		// Cancel any in-flight playTrack/resume so they cannot restart audio after this.
+		this.playSeq += 1;
 		this.clearStopTimer();
-		this.set({ busy: true });
+		this.pending = null;
+		this.set({ busy: true, playing: false });
 		try {
 			await this.sdkPlayer?.pause();
 		} catch {
@@ -460,7 +463,7 @@ export class HostSpotifyPlayer {
 			}).catch(() => null);
 		}
 		this.audio?.pause();
-		this.set({ playing: false, busy: false });
+		this.set({ playing: false, busy: false, needsGesture: false });
 	}
 
 	async resume() {

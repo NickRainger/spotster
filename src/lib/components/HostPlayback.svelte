@@ -12,7 +12,7 @@
 		settings: GameSettings;
 		spotifySource: 'mock' | 'spotify';
 		compact?: boolean;
-		/** Host must confirm title/artist — pause music until cleared */
+		/** Hard-stop music while title/artist confirm or votes are open */
 		titleConfirmPaused?: boolean;
 	}
 
@@ -46,7 +46,7 @@
 		!spotifyReady
 			? 'Spotify vereist'
 			: titleConfirmPaused
-				? 'Gepauzeerd (viesje)'
+				? 'Hard gepauzeerd'
 				: status.mode === 'premium'
 					? 'Spotify'
 					: status.mode === 'preview'
@@ -88,22 +88,17 @@
 		}
 
 		if (titleConfirmPaused) {
-			pausedForConfirm = true;
-			void hostPlayer.pause();
+			if (!pausedForConfirm || status.playing) {
+				pausedForConfirm = true;
+				void hostPlayer.pause();
+			}
 			return;
 		}
 
 		if (pausedForConfirm) {
 			pausedForConfirm = false;
-			if (track && status.unlocked) {
-				void hostPlayer.playTrack({
-					uri: track.spotifyUri,
-					previewUrl: track.previewUrl,
-					playDurationSec: settings.playDurationSec,
-					playOffsetSec: settings.playOffsetSec,
-					fromUserGesture: true
-				});
-			}
+			// Resume from pause position when possible (don't restart the track)
+			void hostPlayer.resume();
 			return;
 		}
 
@@ -120,7 +115,7 @@
 	});
 
 	function onMainTap() {
-		if (!hostPlayer || status.busy) return;
+		if (!hostPlayer || status.busy || titleConfirmPaused) return;
 		void hostPlayer.togglePlay(playOpts ?? undefined);
 	}
 </script>
@@ -136,7 +131,7 @@
 				<button
 					type="button"
 					class="btn btn-primary {compact ? 'btn-md min-h-11 w-full' : 'btn-lg min-h-14 w-full text-base'}"
-					disabled={status.busy}
+					disabled={status.busy || titleConfirmPaused}
 					onclick={onMainTap}
 				>
 					Activeer Spotify-audio
@@ -146,8 +141,8 @@
 			<div class="flex min-w-0 items-center gap-2">
 				<div class="min-w-0 flex-1">
 					<MockNowPlaying
-						playing={status.playing}
-						phaseLabel={PHASE_LABELS[phase]}
+						playing={status.playing && !titleConfirmPaused}
+						phaseLabel={titleConfirmPaused ? 'Gepauzeerd' : PHASE_LABELS[phase]}
 						{track}
 						{modeLabel}
 						{compact}
@@ -157,12 +152,18 @@
 					type="button"
 					class="btn shrink-0 {compact
 						? 'btn-md min-h-11 min-w-20'
-						: 'btn-lg min-h-14 min-w-28 text-base'} {status.playing ? 'btn-outline' : 'btn-primary'}"
-					disabled={status.busy || (!track && !lastPlayKey && !status.playing)}
+						: 'btn-lg min-h-14 min-w-28 text-base'} {status.playing && !titleConfirmPaused
+						? 'btn-outline'
+						: 'btn-primary'}"
+					disabled={status.busy ||
+						titleConfirmPaused ||
+						(!track && !lastPlayKey && !status.playing)}
 					onclick={onMainTap}
 				>
 					{#if status.busy}
 						<span class="loading loading-spinner loading-sm"></span>
+					{:else if titleConfirmPaused}
+						⏸
 					{:else if status.playing}
 						Pauze
 					{:else}
@@ -171,7 +172,9 @@
 				</button>
 			</div>
 
-			{#if status.error || (status.needsGesture && status.unlocked && track && phase === 'HOST_PLAYING')}
+			{#if titleConfirmPaused}
+				<p class="text-xs text-secondary">Muziek hard gestopt tot ja/nee of stemming klaar is.</p>
+			{:else if status.error || (status.needsGesture && status.unlocked && track && phase === 'HOST_PLAYING')}
 				<p class="text-xs text-warning">
 					{status.error ?? 'Autoplay geblokkeerd — tik Speel.'}
 				</p>
@@ -180,10 +183,11 @@
 	</div>
 {:else}
 	<MockNowPlaying
-		playing={status.playing || phase === 'HOST_PLAYING' || phase === 'GUESSING'}
-		phaseLabel={PHASE_LABELS[phase]}
+		playing={!titleConfirmPaused &&
+			(status.playing || phase === 'HOST_PLAYING' || phase === 'GUESSING')}
+		phaseLabel={titleConfirmPaused ? 'Gepauzeerd' : PHASE_LABELS[phase]}
 		{track}
-		modeLabel="Host speelt"
+		modeLabel={titleConfirmPaused ? 'Hard gepauzeerd' : 'Host speelt'}
 		{compact}
 	/>
 {/if}

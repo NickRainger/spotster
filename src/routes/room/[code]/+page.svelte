@@ -78,6 +78,35 @@
 			phase === 'WAITING_TURN'
 	);
 
+	/** Post-reveal: who placed correctly and may claim title/artist viesje */
+	const correctClaimantId = $derived.by(() => {
+		const r = snap.room?.turn.lastResolve;
+		if (!r) return null;
+		if (r.stolenBy) return r.stolenBy;
+		if (r.activeKept || r.correct) return snap.room?.turn.activePlayerId ?? null;
+		return null;
+	});
+	const canClaimTitle = $derived(
+		!!seatPlayer &&
+			!!correctClaimantId &&
+			seatPlayer.id === correctClaimantId &&
+			(phase === 'RESOLVE' || phase === 'CHECK_WIN') &&
+			snap.room?.settings.tokenEarnMode !== 'off' &&
+			!snap.room?.titleConfirm &&
+			seatPlayer.tokens < (snap.room?.settings.tokensMax ?? 99)
+	);
+	const myVote = $derived(
+		snap.room?.titleConfirm?.votes.find((v) => v.playerId === (isSingle ? seatId : snap.playerId)) ??
+			null
+	);
+	const canCastVote = $derived(
+		!!snap.room?.titleConfirm &&
+			snap.room.titleConfirm.mode === 'votes' &&
+			!!seatId &&
+			snap.room.titleConfirm.voterIds.includes(seatId) &&
+			!myVote
+	);
+
 	onMount(() => {
 		gameClient.connect();
 		let waitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -449,6 +478,84 @@
 		{:else}
 			<!-- GAME -->
 			<section class="anim-enter mt-3 flex min-w-0 flex-col gap-3">
+				<!-- TOP: hard-pause title/artist confirm (host ja/nee or majority votes) -->
+				{#if room.titleConfirm}
+					{@const tc = room.titleConfirm}
+					{@const forN = tc.votes.filter((v) => v.vote === 'for').length}
+					{@const againstN = tc.votes.filter((v) => v.vote === 'against').length}
+					<section
+						class="rounded-2xl border-2 border-secondary bg-secondary/20 px-4 py-4 sm:px-5"
+						aria-live="assertive"
+					>
+						<p class="game-label text-secondary">Hard gepauzeerd · titel/artiest</p>
+						<p class="font-display mt-1 text-2xl leading-tight text-white sm:text-3xl">
+							{tc.playerName} claimt het liedje
+						</p>
+						{#if tc.mode === 'host'}
+							{#if isHost}
+								<p class="mt-1 text-sm text-white/65">
+									Alleen jij beslist. Ja = +1 viesje. Nee = niks. Flow &amp; muziek staan stil.
+								</p>
+								<div class="mt-3 flex flex-wrap gap-2">
+									<button
+										type="button"
+										class="btn btn-secondary btn-md min-h-12"
+										onclick={() =>
+											gameClient.send({
+												type: 'token_earn_approve',
+												playerId: tc.playerId
+											})}>Ja</button
+									>
+									<button
+										type="button"
+										class="btn btn-outline btn-md min-h-12"
+										onclick={() => gameClient.send({ type: 'token_earn_deny' })}>Nee</button
+									>
+								</div>
+							{:else}
+								<p class="mt-1 text-sm text-white/65">Wachten op host ja/nee…</p>
+							{/if}
+						{:else}
+							<p class="mt-1 text-sm text-white/65">
+								Stemmen · eerste tot {tc.majorityNeeded} voor óf tegen wint ({forN}–{againstN}).
+								{#if !room.settings.hostPlays}
+									Host stemt niet mee.
+								{/if}
+							</p>
+							{#if canCastVote}
+								<div class="mt-3 flex flex-wrap gap-2">
+									<button
+										type="button"
+										class="btn btn-secondary btn-md min-h-12"
+										onclick={() =>
+											gameClient.send({
+												type: 'token_vote',
+												vote: 'for',
+												asPlayerId: asId()
+											})}>Ja</button
+									>
+									<button
+										type="button"
+										class="btn btn-outline btn-md min-h-12"
+										onclick={() =>
+											gameClient.send({
+												type: 'token_vote',
+												vote: 'against',
+												asPlayerId: asId()
+											})}>Nee</button
+									>
+								</div>
+							{:else if myVote}
+								<p class="mt-2 text-sm text-secondary">
+									Jouw stem: {myVote.vote === 'for' ? 'ja' : 'nee'} — wachten op meerderheid…
+								</p>
+							{:else}
+								<p class="mt-2 text-sm text-white/50">Wachten op stemmen…</p>
+							{/if}
+						{/if}
+					</section>
+				{/if}
+
 				{#if phase === 'GAME_OVER'}
 					<div class="rounded-3xl border border-accent/40 bg-accent/10 p-6 text-center">
 						<p class="text-sm uppercase tracking-[0.3em] text-accent">winner</p>
@@ -508,52 +615,6 @@
 					/>
 				</div>
 
-				{#if room.titleConfirm}
-					<section
-						class="anim-enter rounded-2xl border-2 border-secondary bg-secondary/15 px-4 py-4"
-						aria-live="polite"
-					>
-						<p class="game-label text-secondary">Gepauzeerd · viesje-check</p>
-						{#if isHost}
-							<p class="font-display mt-1 text-2xl leading-tight text-white sm:text-3xl">
-								{room.titleConfirm.playerName} claimt titel/artiest
-							</p>
-							<p class="mt-1 text-sm text-white/65">
-								Speler noemt titel of artiest. Keur goed voor +1 viesje, of wijs af. Muziek &amp;
-								timers staan stil.
-							</p>
-							<div class="mt-3 flex flex-wrap gap-2">
-								<button
-									type="button"
-									class="btn btn-secondary btn-md min-h-12"
-									onclick={() =>
-										gameClient.send({
-											type: 'token_earn_approve',
-											playerId: room.titleConfirm!.playerId
-										})}
-								>
-									Goedkeuren → +1 viesje
-								</button>
-								<button
-									type="button"
-									class="btn btn-outline btn-md min-h-12"
-									onclick={() => gameClient.send({ type: 'token_earn_deny' })}
-								>
-									Afwijzen
-								</button>
-							</div>
-						{:else}
-							<p class="font-display mt-1 text-2xl leading-tight text-white sm:text-3xl">
-								Wachten op host…
-							</p>
-							<p class="mt-1 text-sm text-white/65">
-								{room.titleConfirm.playerName} wacht op bevestiging van titel/artiest. Spel &amp;
-								muziek pauzeren.
-							</p>
-						{/if}
-					</section>
-				{/if}
-
 				{#if !privacyLocked && room.turn.lastResolve && (phase === 'RESOLVE' || phase === 'CHECK_WIN')}
 					{@const r = room.turn.lastResolve}
 					{@const tone = r.stolenBy ? 'stolen' : r.correct || r.activeKept ? 'good' : 'miss'}
@@ -573,6 +634,16 @@
 						<p class="mt-2 text-sm text-white/75">
 							{r.title} — {r.artist} ({r.year})
 						</p>
+						{#if canClaimTitle}
+							<button
+								type="button"
+								class="btn btn-secondary btn-md mt-3 min-h-12"
+								onclick={() =>
+									gameClient.send({ type: 'request_token', asPlayerId: asId() })}
+							>
+								Ik wist titel/artiest → claim viesje
+							</button>
+						{/if}
 					</div>
 				{:else if !privacyLocked && phase === 'REVEAL' && room.turn.track}
 					<div class="rounded-2xl border border-primary/40 bg-primary/10 px-4 py-3">
@@ -829,33 +900,23 @@
 								class="btn btn-outline btn-sm"
 								onclick={() =>
 									gameClient.send({ type: 'three_for_one', asPlayerId: asId() })}
-								disabled={seatPlayer.tokens < room.settings.threeForOneCost}
+								disabled={seatPlayer.tokens < room.settings.threeForOneCost || !!room.titleConfirm}
 								title="Koop een zichtbare kaart uit het deck voor viesjes"
 							>
 								Koop kaart (−{room.settings.threeForOneCost} viesjes)
 							</button>
 						{/if}
-						{#if seatPlayer && room.settings.tokenEarnMode !== 'off'}
-							<button
-								class="btn btn-ghost btn-sm border border-secondary/30"
-								type="button"
-								onclick={() =>
-									gameClient.send({ type: 'request_token', asPlayerId: asId() })}
-								disabled={seatPlayer.tokens >= room.settings.tokensMax || !!room.titleConfirm}
-							>
-								{room.titleConfirm?.playerId === seatPlayer.id
-									? 'Wachten op host…'
-									: 'Vraag viesje (liedje goed)'}
-							</button>
-						{/if}
 						{#if isHost && (room.settings.challengeMode === 'host-reveal' || room.settings.challengeMode === 'both' || isSingle) && phase === 'CHALLENGE_WINDOW'}
-							<button class="btn btn-accent btn-sm" onclick={() => gameClient.send({ type: 'host_reveal' })}
-								>Reveal nu</button
+							<button
+								class="btn btn-accent btn-sm"
+								disabled={!!room.titleConfirm}
+								onclick={() => gameClient.send({ type: 'host_reveal' })}>Reveal nu</button
 							>
 						{/if}
 						{#if isHost}
 							<button
 								class="btn btn-ghost btn-sm"
+								disabled={!!room.titleConfirm}
 								onclick={() => gameClient.send({ type: 'host_skip_turn' })}>Skip beurt</button
 							>
 						{/if}
@@ -863,39 +924,6 @@
 							>Leave</button
 						>
 					</div>
-
-					{#if isHost && room.settings.tokenEarnMode === 'host' && !room.titleConfirm}
-						<div class="game-section min-w-0 space-y-3">
-							<h2 class="game-h">
-								Liedje goed?
-								<span class="game-h-sub">keur titel / artiest goed → +1 viesje</span>
-							</h2>
-							<p class="text-sm text-white/55">
-								Of laat de speler op “Vraag viesje” drukken — dan pauzeert het spel tot jij
-								bevestigt. Je kunt hier ook direct +1 geven.
-							</p>
-							<div class="flex flex-col gap-2">
-								{#each room.players.filter((p) => room.turnOrder.includes(p.id)) as p}
-									<button
-										type="button"
-										class="btn btn-secondary btn-md min-h-12 w-full justify-between gap-3 sm:w-auto"
-										disabled={p.tokens >= room.settings.tokensMax}
-										onclick={() =>
-											gameClient.send({ type: 'token_earn_approve', playerId: p.id })}
-									>
-										<span class="flex min-w-0 items-center gap-2">
-											<span
-												class="h-2.5 w-2.5 shrink-0 rounded-full"
-												style="background:{p.color}"
-											></span>
-											<span class="truncate font-semibold">{p.name}</span>
-										</span>
-										<span class="shrink-0 text-sm">+1 viesje · nu {p.tokens}</span>
-									</button>
-								{/each}
-							</div>
-						</div>
-					{/if}
 
 					{#if isHost}
 						<div class="game-section min-w-0 space-y-3">

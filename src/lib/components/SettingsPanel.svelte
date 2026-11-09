@@ -163,8 +163,8 @@
 						tokenEarnMode: e.currentTarget.value as GameSettings['tokenEarnMode']
 					})}
 			>
-				<option value="host">Host keurt goed</option>
-				<option value="votes">Stemmen (stub)</option>
+				<option value="host">Host ja/nee</option>
+				<option value="votes">Stemmen (majority)</option>
 				<option value="off">Uit</option>
 			</select>
 		</label>
