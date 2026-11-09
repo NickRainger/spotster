@@ -162,42 +162,88 @@
 		</label>
 	</div>
 
-	<div class="flex flex-col gap-3 rounded-xl border border-primary/20 bg-base-100/50 p-3 sm:flex-row sm:flex-wrap sm:items-center">
-		<label class="label min-h-12 cursor-pointer justify-start gap-3">
-			<input
-				type="checkbox"
-				class="toggle toggle-primary toggle-lg"
-				checked={settings.hostPlays}
-				{disabled}
-				onchange={(e) => onChange({ hostPlays: e.currentTarget.checked })}
-			/>
-			<span class="label-text text-base">Host speelt mee</span>
-		</label>
-		<label class="label min-h-12 cursor-pointer justify-start gap-3">
-			<input
-				type="checkbox"
-				class="toggle toggle-primary toggle-lg"
-				checked={settings.threeForOneEnabled}
-				{disabled}
-				onchange={(e) => onChange({ threeForOneEnabled: e.currentTarget.checked })}
-			/>
-			<span class="label-text text-base">3-voor-1</span>
-		</label>
-		{#if settings.threeForOneEnabled}
-			<label class="form-control w-full sm:w-28">
-				<span class="label-text text-base text-white/70">3-voor-1 kosten</span>
+	<div class="space-y-3">
+		<div class="rounded-xl border border-primary/25 bg-base-100/50 p-3">
+			<p class="game-label mb-2">Host</p>
+			<label
+				class="flex min-h-14 cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition
+					{settings.hostPlays
+					? 'border-primary bg-primary/15'
+					: 'border-white/15 bg-base-100/40'}"
+			>
 				<input
-					type="number"
-					inputmode="numeric"
-					class="input input-bordered input-lg border-primary/20 bg-base-100"
-					min="1"
-					max="10"
-					value={settings.threeForOneCost}
+					type="checkbox"
+					class="checkbox checkbox-primary checkbox-lg mt-0.5 shrink-0"
+					checked={settings.hostPlays}
 					{disabled}
-					onchange={(e) => onChange({ threeForOneCost: Number(e.currentTarget.value) })}
+					onchange={(e) => onChange({ hostPlays: e.currentTarget.checked })}
 				/>
+				<span class="min-w-0">
+					<span class="block text-base font-semibold text-white">Host speelt mee</span>
+					<span class="mt-0.5 block text-sm text-white/55">
+						Aan = host zit in de beurtenlijst. Uit = host is alleen DJ (geen bord).
+					</span>
+				</span>
 			</label>
-		{/if}
+			<div class="mt-2 grid grid-cols-2 gap-2">
+				<button
+					type="button"
+					class="btn min-h-11 {settings.hostPlays
+						? 'btn-primary'
+						: 'btn-ghost border border-primary/25'}"
+					{disabled}
+					onclick={() => onChange({ hostPlays: true })}>Host speelt mee</button
+				>
+				<button
+					type="button"
+					class="btn min-h-11 {!settings.hostPlays
+						? 'btn-primary'
+						: 'btn-ghost border border-primary/25'}"
+					{disabled}
+					onclick={() => onChange({ hostPlays: false })}>Host alleen DJ</button
+				>
+			</div>
+		</div>
+
+		<div class="rounded-xl border border-primary/25 bg-base-100/50 p-3">
+			<p class="game-label mb-2">3-voor-1</p>
+			<label
+				class="flex min-h-14 cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition
+					{settings.threeForOneEnabled
+					? 'border-primary bg-primary/15'
+					: 'border-white/15 bg-base-100/40'}"
+			>
+				<input
+					type="checkbox"
+					class="checkbox checkbox-primary checkbox-lg mt-0.5 shrink-0"
+					checked={settings.threeForOneEnabled}
+					{disabled}
+					onchange={(e) => onChange({ threeForOneEnabled: e.currentTarget.checked })}
+				/>
+				<span class="min-w-0">
+					<span class="block text-base font-semibold text-white">3-voor-1 aankoop</span>
+					<span class="mt-0.5 block text-sm text-white/55">
+						Koop met viesjes een zichtbare kaart uit het deck (jaar zichtbaar), die
+						automatisch op je tijdlijn komt. Standaard: 3 viesjes → 1 kaart.
+					</span>
+				</span>
+			</label>
+			{#if settings.threeForOneEnabled}
+				<label class="form-control mt-3 max-w-xs">
+					<span class="label-text text-base text-white/70">Kosten in viesjes</span>
+					<input
+						type="number"
+						inputmode="numeric"
+						class="input input-bordered input-lg border-primary/20 bg-base-100"
+						min="1"
+						max="10"
+						value={settings.threeForOneCost}
+						{disabled}
+						onchange={(e) => onChange({ threeForOneCost: Number(e.currentTarget.value) })}
+					/>
+				</label>
+			{/if}
+		</div>
 	</div>
 
 	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

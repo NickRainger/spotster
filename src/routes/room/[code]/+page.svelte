@@ -736,8 +736,9 @@
 								onclick={() =>
 									gameClient.send({ type: 'three_for_one', asPlayerId: asId() })}
 								disabled={seatPlayer.tokens < room.settings.threeForOneCost}
+								title="Koop een zichtbare kaart uit het deck voor viesjes"
 							>
-								3-voor-1 (−{room.settings.threeForOneCost})
+								Koop kaart (−{room.settings.threeForOneCost} viesjes)
 							</button>
 						{/if}
 						{#if isHost && (room.settings.challengeMode === 'host-reveal' || room.settings.challengeMode === 'both' || isSingle) && phase === 'CHALLENGE_WINDOW'}
