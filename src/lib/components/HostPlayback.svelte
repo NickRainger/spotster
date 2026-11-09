@@ -27,11 +27,16 @@
 	});
 	let lastPlayKey = $state<string | null>(null);
 
+	/** Phases where the current track is “in play” for UI (play/pause controls). */
 	const activePlayPhases: GamePhase[] = [
 		'HOST_PLAYING',
 		'GUESSING',
 		'GUESS_LOCKED',
-		'CHALLENGE_WINDOW'
+		'CHALLENGE_WINDOW',
+		'REVEAL',
+		'RESOLVE',
+		'CHECK_WIN',
+		'WAITING_TURN'
 	];
 
 	const spotifyReady = $derived(spotifySource === 'spotify');
@@ -72,15 +77,15 @@
 	$effect(() => {
 		if (!isHost || !hostPlayer || !spotifyReady) return;
 
-		if (!activePlayPhases.includes(phase) || !track) {
-			if (phase === 'REVEAL' || phase === 'RESOLVE' || phase === 'WAITING_TURN' || phase === 'lobby') {
-				void hostPlayer.pause();
-				lastPlayKey = null;
-			}
+		// Only hard-stop at lobby / game over — keep audio through reveal/score/waiting
+		// until the next track’s playTrack() replaces it.
+		if (phase === 'lobby' || phase === 'GAME_OVER') {
+			void hostPlayer.pause();
+			lastPlayKey = null;
 			return;
 		}
 
-		if (phase === 'HOST_PLAYING' && lastPlayKey !== `play:${track.id}`) {
+		if (phase === 'HOST_PLAYING' && track && lastPlayKey !== `play:${track.id}`) {
 			lastPlayKey = `play:${track.id}`;
 			void hostPlayer.playTrack({
 				uri: track.spotifyUri,
@@ -93,8 +98,12 @@
 	});
 
 	function onPlayTap() {
-		if (!hostPlayer || !playOpts) return;
-		void hostPlayer.playFromUserGesture(playOpts);
+		if (!hostPlayer) return;
+		if (playOpts) {
+			void hostPlayer.playFromUserGesture(playOpts);
+			return;
+		}
+		void hostPlayer.resume();
 	}
 
 	function onPauseTap() {
@@ -102,11 +111,12 @@
 	}
 
 	function onResumeTap() {
-		if (status.needsGesture || !status.unlocked) {
-			onPlayTap();
+		if (!hostPlayer) return;
+		if (playOpts && (status.needsGesture || !status.unlocked)) {
+			void hostPlayer.playFromUserGesture(playOpts);
 			return;
 		}
-		void hostPlayer?.resume();
+		void hostPlayer.resume();
 	}
 </script>
 
@@ -127,7 +137,7 @@
 				{modeLabel}
 			/>
 
-			{#if status.needsGesture && track && activePlayPhases.includes(phase)}
+			{#if status.needsGesture && track && phase === 'HOST_PLAYING'}
 				<button
 					type="button"
 					class="btn btn-primary btn-lg min-h-14 w-full text-base sm:w-auto"
@@ -145,7 +155,7 @@
 					<button type="button" class="btn btn-outline btn-md min-h-12 min-w-24" onclick={onPauseTap}
 						>Pauze</button
 					>
-				{:else if track && activePlayPhases.includes(phase)}
+				{:else if track || lastPlayKey}
 					<button type="button" class="btn btn-primary btn-md min-h-12 min-w-24" onclick={onResumeTap}
 						>Speel</button
 					>
