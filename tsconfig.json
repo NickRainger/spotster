@@ -1,0 +1,16 @@
+{
+	"extends": "$app/tsconfig",
+	"compilerOptions": {
+		"strict": true,
+		"ignoreDeprecations": "6.0",
+		"types": ["$app/types", "node"],
+		"paths": {
+			"#lib": ["./src/lib/index.ts"],
+			"#lib/*": ["./src/lib/*"],
+			"$lib": ["./src/lib/index.ts"],
+			"$lib/*": ["./src/lib/*"]
+		},
+		"baseUrl": "."
+	},
+	"include": ["src", "server", "vite.config.ts"]
+}
