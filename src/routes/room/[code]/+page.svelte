@@ -17,7 +17,8 @@
 	let waitingRoom = $state(false);
 	let selectedSlot = $state<number | null>(null);
 	let challengeSlot = $state<number | null>(null);
-	let showSettings = $state(true);
+	let showSettings = $state(false);
+	let showMusic = $state(true);
 	let challengeLeft = $state(0);
 
 	const code = $derived(page.params.code?.toUpperCase() ?? '');
@@ -263,122 +264,134 @@
 		{/if}
 
 		{#if !inGame}
-			<section class="anim-enter mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-				<div class="space-y-4">
-					{#if isHost}
-						<div class="flex flex-wrap gap-2">
-							<button
-								class="btn {room.playMode === 'multi' ? 'btn-primary' : 'btn-outline'}"
-								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'multi' })}
-								>Multi-device</button
-							>
-							<button
-								class="btn {room.playMode === 'single' ? 'btn-secondary' : 'btn-outline'}"
-								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'single' })}
-								>Single-device</button
-							>
-						</div>
-					{/if}
+			<section class="anim-enter mx-auto mt-8 max-w-2xl space-y-10">
+				{#if isHost}
+					<div class="flex flex-wrap gap-2">
+						<button
+							class="btn btn-sm {room.playMode === 'multi' ? 'btn-primary' : 'btn-ghost border border-white/15'}"
+							onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'multi' })}
+							>Multi-device</button
+						>
+						<button
+							class="btn btn-sm {room.playMode === 'single' ? 'btn-secondary' : 'btn-ghost border border-white/15'}"
+							onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'single' })}
+							>Single-device</button
+						>
+					</div>
+				{/if}
 
+				<div>
+					<div class="mb-4 flex items-baseline justify-between gap-3">
+						<h2 class="font-display text-3xl">Spelers</h2>
+						<span class="text-sm text-white/40">{room.players.length}</span>
+					</div>
 					{#if isSingle && isHost}
 						<SingleDeviceLobby players={room.players} turnOrder={room.turnOrder} />
 					{:else}
-						<div class="rounded-3xl border border-white/10 bg-base-200/50 p-5">
-							<div class="mb-4 flex items-center justify-between">
-								<h2 class="font-display text-2xl">Spelers</h2>
-								<span class="badge badge-outline">{room.players.length}</span>
-							</div>
-							<ul class="space-y-2">
-								{#each room.turnOrder as pid, idx}
-									{@const p = room.players.find((x) => x.id === pid)}
-									{#if p}
-										<li
-											class="flex items-center gap-3 rounded-2xl border border-white/10 bg-base-100/40 px-3 py-2"
-										>
-											<span class="h-3 w-3 rounded-full" style="background:{p.color}"></span>
-											<span class="flex-1 font-semibold"
-												>{p.name}
-												{#if p.isHost}<span class="text-xs text-primary">host</span>{/if}
-												{#if !p.connected}<span class="text-xs text-warning">offline</span>{/if}
-											</span>
-											{#if isHost && !isSingle}
-												<div class="join">
+						<ul class="divide-y divide-white/10 border-y border-white/10">
+							{#each room.turnOrder as pid, idx}
+								{@const p = room.players.find((x) => x.id === pid)}
+								{#if p}
+									<li class="flex items-center gap-3 py-3">
+										<span class="h-2.5 w-2.5 rounded-full" style="background:{p.color}"></span>
+										<span class="flex-1 font-semibold"
+											>{p.name}
+											{#if p.isHost}<span class="ml-1 text-xs font-normal text-primary">host</span>{/if}
+											{#if !p.connected}<span class="ml-1 text-xs font-normal text-warning">offline</span>{/if}
+										</span>
+										{#if isHost && !isSingle}
+											<div class="flex gap-1">
+												<button
+													class="btn btn-ghost btn-xs"
+													onclick={() => movePlayer(p.id, -1)}
+													disabled={idx === 0}>↑</button
+												>
+												<button
+													class="btn btn-ghost btn-xs"
+													onclick={() => movePlayer(p.id, 1)}
+													disabled={idx === room.turnOrder.length - 1}>↓</button
+												>
+												{#if !p.isHost}
 													<button
-														class="btn btn-ghost btn-xs join-item"
-														onclick={() => movePlayer(p.id, -1)}
-														disabled={idx === 0}>↑</button
+														class="btn btn-ghost btn-xs text-error"
+														onclick={() => gameClient.send({ type: 'kick', playerId: p.id })}
+														>kick</button
 													>
-													<button
-														class="btn btn-ghost btn-xs join-item"
-														onclick={() => movePlayer(p.id, 1)}
-														disabled={idx === room.turnOrder.length - 1}>↓</button
-													>
-													{#if !p.isHost}
-														<button
-															class="btn btn-ghost btn-xs join-item text-error"
-															onclick={() => gameClient.send({ type: 'kick', playerId: p.id })}
-															>kick</button
-														>
-													{/if}
-												</div>
-											{/if}
-										</li>
-									{/if}
-								{/each}
-							</ul>
-							<p class="mt-3 text-xs text-white/40">
-								{isSingle
-									? 'Schakel naar single-device als host om namen toe te voegen.'
-									: 'Volgorde = speelbeurten. Host kan herordenen.'}
-							</p>
-						</div>
-					{/if}
-
-					{#if isHost}
-						<div class="flex flex-wrap gap-2">
-							<button
-								class="btn btn-primary btn-lg"
-								onclick={() => gameClient.send({ type: 'start' })}
-								disabled={isSingle && room.turnOrder.length < 1}
-								>Start spel</button
-							>
-							<button class="btn btn-ghost btn-lg text-error" type="button" onclick={leaveRoom}
-								>Leave</button
-							>
-						</div>
-						{#if room.spotify}
-							<p class="text-xs text-white/40">
-								Audio: {room.spotify.source === 'spotify'
-									? `${room.spotify.playlistName ?? 'Spotify'} (${room.spotify.tier})`
-									: 'mock-deck'}
-							</p>
-						{/if}
-						<SpotifyPanel
-							roomCode={room.code}
-							spotify={room.spotify ?? {
-								connected: false,
-								tier: 'unknown',
-								displayName: null,
-								playlistName: null,
-								playlistId: null,
-								source: 'mock'
-							}}
-							deckRemaining={room.deckRemaining}
-						/>
-					{:else}
-						<p class="text-white/60">
-							Wachten tot {room.players.find((p) => p.isHost)?.name ?? 'host'} start…
-						</p>
+												{/if}
+											</div>
+										{/if}
+									</li>
+								{/if}
+							{/each}
+						</ul>
+						<p class="mt-2 text-xs text-white/40">Volgorde = speelbeurten</p>
 					{/if}
 				</div>
 
-				<div class="rounded-3xl border border-white/10 bg-base-200/50 p-5">
+				{#if isHost}
+					<div class="space-y-3">
+						<button
+							class="btn btn-primary btn-lg px-10"
+							onclick={() => gameClient.send({ type: 'start' })}
+							disabled={isSingle && room.turnOrder.length < 1}
+							>Start spel</button
+						>
+						<p class="text-sm text-white/45">
+							Muziek:
+							{#if room.spotify?.source === 'spotify' && room.spotify.playlistName}
+								<span class="text-secondary">{room.spotify.playlistName}</span>
+							{:else}
+								<span class="text-white/60">mock-deck</span> — kies hieronder een playlist
+							{/if}
+						</p>
+					</div>
+
+					<div>
+						<button
+							type="button"
+							class="mb-3 flex w-full items-baseline justify-between gap-3 text-left"
+							onclick={() => (showMusic = !showMusic)}
+						>
+							<h2 class="font-display text-2xl">Muziek</h2>
+							<span class="text-sm text-white/40">{showMusic ? 'verberg' : 'toon'}</span>
+						</button>
+						{#if showMusic}
+							<SpotifyPanel
+								roomCode={room.code}
+								spotify={room.spotify ?? {
+									connected: false,
+									tier: 'unknown',
+									displayName: null,
+									playlistName: null,
+									playlistId: null,
+									source: 'mock'
+								}}
+								deckRemaining={room.deckRemaining}
+							/>
+						{/if}
+					</div>
+				{:else}
+					<p class="text-white/60">
+						Wachten tot {room.players.find((p) => p.isHost)?.name ?? 'host'} start…
+					</p>
+				{/if}
+
+				<div>
 					<button
-						class="mb-4 flex w-full items-center justify-between"
+						type="button"
+						class="mb-3 flex w-full items-baseline justify-between gap-3 text-left"
 						onclick={() => (showSettings = !showSettings)}
 					>
-						<h2 class="font-display text-2xl">Settings</h2>
-						<span class="text-white/40">{showSettings ? '−' : '+'}</span>
+						<div>
+							<h2 class="font-display text-2xl">Regels</h2>
+							{#if !showSettings}
+								<p class="text-sm text-white/40">
+									{room.settings.rulesVariant} · win op {room.settings.winAt} · {room.settings
+										.challengeSeconds}s challenge
+								</p>
+							{/if}
+						</div>
+						<span class="text-sm text-white/40">{showSettings ? 'verberg' : 'pas aan'}</span>
 					</button>
 					{#if showSettings}
 						<SettingsPanel settings={room.settings} disabled={!isHost} onChange={patchSettings} />

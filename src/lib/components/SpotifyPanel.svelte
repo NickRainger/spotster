@@ -264,11 +264,10 @@
 	});
 </script>
 
-<div class="space-y-4 rounded-3xl border border-white/10 bg-base-200/50 p-5">
+<div class="space-y-4 border-t border-white/10 pt-4">
 	<div class="flex flex-wrap items-start justify-between gap-3">
 		<div>
-			<h2 class="font-display text-2xl">Spotify</h2>
-			<p class="text-sm text-white/50">Host playback in-browser · Premium of preview</p>
+			<p class="text-sm text-white/50">Host-audio in de browser · Premium of preview</p>
 		</div>
 		{#if connected}
 			<span class="badge badge-lg border-0 bg-secondary/20 text-secondary">
