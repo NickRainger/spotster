@@ -8,6 +8,7 @@
 	import HostPlayback from '#lib/components/HostPlayback.svelte';
 	import PassHandoff from '#lib/components/PassHandoff.svelte';
 	import SingleDeviceLobby from '#lib/components/SingleDeviceLobby.svelte';
+	import JoinQrOverlay from '#lib/components/JoinQrOverlay.svelte';
 	import { PHASE_LABELS } from '#lib/game/engine';
 	import type { GameSettings } from '#lib/game/types';
 	import { gameClient, loadSession } from '#lib/ws/client';
@@ -19,6 +20,7 @@
 	let challengeSlot = $state<number | null>(null);
 	let showSettings = $state(false);
 	let showMusic = $state(true);
+	let showJoinQr = $state(false);
 	let challengeLeft = $state(0);
 
 	const code = $derived(page.params.code?.toUpperCase() ?? '');
@@ -250,11 +252,22 @@
 				<p class="text-xs text-white/40">
 					{snap.connected ? 'live' : 'reconnect…'} · {room.deckRemaining} tracks
 				</p>
-				<button class="btn btn-ghost btn-xs text-error" type="button" onclick={leaveRoom}
-					>Leave</button
-				>
+				<div class="flex flex-wrap justify-end gap-1">
+					{#if isHost && !inGame}
+						<button
+							class="btn btn-secondary btn-sm min-h-10"
+							type="button"
+							onclick={() => (showJoinQr = true)}>QR join</button
+						>
+					{/if}
+					<button class="btn btn-ghost btn-xs text-error" type="button" onclick={leaveRoom}
+						>Leave</button
+					>
+				</div>
 			</div>
 		</header>
+
+		<JoinQrOverlay code={room.code} open={showJoinQr} onClose={() => (showJoinQr = false)} />
 
 		{#if snap.error}
 			<div class="alert alert-warning mt-3 text-sm" role="alert">
@@ -330,23 +343,32 @@
 					</div>
 
 					{#if isHost}
+						{@const spotifyReady =
+							room.spotify?.source === 'spotify' &&
+							!!room.spotify.playlistName &&
+							room.deckRemaining >= 5}
 						<div class="space-y-3">
+							<button
+								class="btn btn-secondary btn-lg min-h-12 w-full text-base sm:w-auto"
+								type="button"
+								onclick={() => (showJoinQr = true)}>Toon QR om te joinen</button
+							>
 							<button
 								class="btn btn-primary btn-lg min-h-14 w-full px-10 text-base sm:w-auto"
 								onclick={() => gameClient.send({ type: 'start' })}
-								disabled={isSingle && room.turnOrder.length < 1}
+								disabled={(isSingle && room.turnOrder.length < 1) || !spotifyReady}
 								>Start spel</button
 							>
-							<p class="text-base text-white/55 sm:text-sm sm:text-white/45">
-								Muziek:
-								{#if room.spotify?.source === 'spotify' && room.spotify.playlistName}
-									<span class="text-secondary">{room.spotify.playlistName}</span>
-								{:else}
-									<span class="text-white/60">mock-deck</span>
-									<span class="hidden sm:inline"> — kies rechts een playlist</span>
-									<span class="sm:hidden"> — kies hieronder</span>
-								{/if}
-							</p>
+							{#if !spotifyReady}
+								<p class="text-base text-warning sm:text-sm">
+									Verbind Spotify en kies een playlist (min. 5 tracks) vóór Start — geen mock-deck.
+								</p>
+							{:else}
+								<p class="text-base text-white/55 sm:text-sm sm:text-white/45">
+									Muziek: <span class="text-secondary">{room.spotify?.playlistName}</span>
+									· {room.deckRemaining} tracks
+								</p>
+							{/if}
 						</div>
 					{:else}
 						<p class="text-white/60">

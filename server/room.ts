@@ -1,5 +1,4 @@
 import { customAlphabet } from 'nanoid';
-import { shuffledDeck } from '../src/lib/game/deck.ts';
 import {
 	checkWinner,
 	emptyTurn,
@@ -556,19 +555,14 @@ export class Room {
 			: this.players.filter((p) => !p.isHost);
 		if (playing.length < 1) throw new Error('Minimaal 1 meespelende speler nodig');
 		this.deviceOwnerId = this.players.find((p) => p.isHost)?.id ?? conn.playerId;
-		// Keep Spotify deck if loaded; otherwise mock
-		if (this.spotify.source === 'spotify' && this.deckBackup.length >= 5) {
-			this.deck = this.deckBackup.map((t) => ({ ...t }));
-			for (let i = this.deck.length - 1; i > 0; i--) {
-				const j = Math.floor(Math.random() * (i + 1));
-				[this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
-			}
-		} else {
-			this.deck = shuffledDeck();
-			this.spotify.source = 'mock';
-			this.spotify.playlistName = null;
-			this.spotify.playlistId = null;
-			this.deckBackup = [];
+		// Spotify-only: no silent mock deck
+		if (this.spotify.source !== 'spotify' || this.deckBackup.length < 5) {
+			throw new Error('Connect Spotify en kies een playlist (min. 5 tracks) vóór Start');
+		}
+		this.deck = this.deckBackup.map((t) => ({ ...t }));
+		for (let i = this.deck.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
 		}
 		this.winnerId = null;
 		this.turn = emptyTurn();

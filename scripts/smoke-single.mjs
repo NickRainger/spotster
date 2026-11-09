@@ -46,6 +46,28 @@ console.log(
 	msg.room.players.map((p) => p.name).join(',')
 );
 
+const fakeTracks = Array.from({ length: 8 }, (_, i) => ({
+	id: `sm${i}`,
+	title: `Track ${i}`,
+	artist: 'Smoke',
+	year: 1970 + i * 3,
+	spotifyYear: 1970 + i * 3,
+	spotifyUri: `spotify:track:smoke${i}`,
+	previewUrl: null,
+	mockColor: '#ff5c33'
+}));
+host.send(
+	JSON.stringify({
+		type: 'set_deck',
+		tracks: fakeTracks,
+		playlistId: 'smoke',
+		playlistName: 'Smoke playlist',
+		source: 'spotify'
+	})
+);
+msg = await once(host, 'room');
+console.log('deck', msg.room.spotify?.source, msg.room.deckRemaining);
+
 host.send(JSON.stringify({ type: 'start' }));
 msg = await once(host, 'room');
 console.log('phase', msg.room.phase, 'handoff', msg.room.handoff?.kind, msg.room.handoff?.playerName);

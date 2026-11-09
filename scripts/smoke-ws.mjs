@@ -40,6 +40,28 @@ p2.send(JSON.stringify({ type: 'join', code, name: 'Sam' }));
 await once(p2, 'room');
 console.log('joined OK');
 
+const fakeTracks = Array.from({ length: 8 }, (_, i) => ({
+	id: `sm${i}`,
+	title: `Track ${i}`,
+	artist: 'Smoke',
+	year: 1970 + i * 3,
+	spotifyYear: 1970 + i * 3,
+	spotifyUri: `spotify:track:smoke${i}`,
+	previewUrl: null,
+	mockColor: '#ff5c33'
+}));
+host.send(
+	JSON.stringify({
+		type: 'set_deck',
+		tracks: fakeTracks,
+		playlistId: 'smoke',
+		playlistName: 'Smoke playlist',
+		source: 'spotify'
+	})
+);
+await once(host, 'room');
+console.log('deck set');
+
 host.send(JSON.stringify({ type: 'start' }));
 
 let room = null;

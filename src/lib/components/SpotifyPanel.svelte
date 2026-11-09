@@ -253,14 +253,14 @@
 		);
 	}
 
-	function resetToMock() {
+	function clearDeck() {
 		gameClient.send({ type: 'set_deck', tracks: [], source: 'mock' });
 		loadedTracks = [];
 		selectedPlaylistId = null;
 	}
 
 	function deselectPlaylist() {
-		resetToMock();
+		clearDeck();
 		error = null;
 	}
 
@@ -491,22 +491,26 @@
 	{/if}
 
 	<div class="rounded-2xl border border-dashed border-white/15 bg-white/5 p-3 text-sm">
-		<p>
-			Deck:
-			<strong>{spotify.source === 'spotify' ? spotify.playlistName ?? 'Spotify' : 'Mock hits'}</strong>
-			· {deckRemaining || (spotify.source === 'spotify' ? loadedTracks.length : '40')} tracks
-		</p>
+		{#if spotify.source === 'spotify' && spotify.playlistName}
+			<p>
+				Deck: <strong class="text-secondary">{spotify.playlistName}</strong>
+				· {deckRemaining || loadedTracks.length} tracks
+			</p>
+		{:else}
+			<p class="text-warning">
+				Nog geen playlist — verbind Spotify en kies een lijst. Zonder playlist kun je niet starten.
+			</p>
+		{/if}
 		<div class="mt-2 flex flex-wrap gap-2">
 			{#if spotify.source === 'spotify'}
-				<button class="btn btn-ghost btn-xs text-error" disabled={disabled} onclick={deselectPlaylist}
-					>Deselecteer playlist</button
+				<button
+					class="btn btn-ghost btn-xs text-error min-h-10"
+					disabled={disabled}
+					onclick={deselectPlaylist}>Deselecteer playlist</button
 				>
 			{/if}
-			<button class="btn btn-ghost btn-xs" disabled={disabled} onclick={resetToMock}
-				>Gebruik mock-deck</button
-			>
 			{#if spotify.source === 'spotify' && loadedTracks.length}
-				<button class="btn btn-ghost btn-xs" onclick={() => (showOverrides = !showOverrides)}>
+				<button class="btn btn-ghost btn-xs min-h-10" onclick={() => (showOverrides = !showOverrides)}>
 					Year overrides {showOverrides ? '−' : '+'}
 				</button>
 			{/if}

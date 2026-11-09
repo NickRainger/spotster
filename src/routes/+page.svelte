@@ -111,6 +111,6 @@
 	</section>
 
 	<footer class="mt-auto pt-10 text-xs text-white/35">
-		vriendengroep only · mock deck · spotify later
+		vriendengroep only · Spotify host playback
 	</footer>
 </main>

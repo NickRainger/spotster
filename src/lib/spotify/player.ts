@@ -318,14 +318,16 @@ export class HostSpotifyPlayer {
 			}
 		}
 
-		opts.mockFallback?.();
+		// No silent mock audio — host must have Premium play or preview
+		this.pending = opts;
 		this.set({
-			mode: 'mock',
-			playing: true,
-			needsGesture: false,
-			error: opts.uri || opts.previewUrl ? 'Geen Spotify-audio — mock' : null
+			mode: opts.uri || opts.previewUrl ? this.status.mode : 'none',
+			playing: false,
+			needsGesture: true,
+			error: !opts.uri && !opts.previewUrl
+				? 'Geen Spotify-audio op dit nummer — kies een andere playlist'
+				: 'Spotify speelt niet — tik Speel / Unlock of check Premium / preview'
 		});
-		this.armStop(durationMs);
 	}
 
 	/** Same as unlock + play pending / current — for the visible Play button. */
