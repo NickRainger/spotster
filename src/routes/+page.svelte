@@ -19,7 +19,7 @@
 			}
 		});
 		const sess = loadSession();
-		if (sess?.name) name = sess.name;
+		// Name field stays empty by default (no session prefills)
 		if (sess?.code) joinCode = sess.code;
 		return () => unsub();
 	});

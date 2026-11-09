@@ -4,10 +4,13 @@
 	interface Props {
 		settings: GameSettings;
 		disabled?: boolean;
+		/** Lobby = full panel; ingame = mid-game adjustable knobs only */
+		mode?: 'lobby' | 'ingame';
 		onChange: (partial: Partial<GameSettings>) => void;
 	}
 
-	let { settings, disabled = false, onChange }: Props = $props();
+	let { settings, disabled = false, mode = 'lobby', onChange }: Props = $props();
+	const lobby = $derived(mode === 'lobby');
 
 	const variants: { id: RulesVariant; label: string }[] = [
 		{ id: 'original', label: 'Original' },
@@ -28,38 +31,69 @@
 </script>
 
 <div class="space-y-5">
-	<div>
-		<p class="game-label mb-2">Regelsvariant</p>
-		<div class="grid grid-cols-2 gap-2">
-			{#each variants as v}
-				<button
-					type="button"
-					class="btn min-h-12 text-base {settings.rulesVariant === v.id
-						? 'btn-primary'
-						: 'btn-ghost border border-primary/25 bg-base-100/40'}"
-					{disabled}
-					onclick={() => onChange({ rulesVariant: v.id })}
-				>
-					{v.label}
-				</button>
-			{/each}
+	{#if lobby}
+		<div>
+			<p class="game-label mb-2">Regelsvariant</p>
+			<div class="grid grid-cols-2 gap-2">
+				{#each variants as v}
+					<button
+						type="button"
+						class="btn min-h-12 text-base {settings.rulesVariant === v.id
+							? 'btn-primary'
+							: 'btn-ghost border border-primary/25 bg-base-100/40'}"
+						{disabled}
+						onclick={() => onChange({ rulesVariant: v.id })}
+					>
+						{v.label}
+					</button>
+				{/each}
+			</div>
 		</div>
-	</div>
+
+		<div class="grid grid-cols-2 gap-3">
+			<label class="form-control">
+				<span class="label-text text-base text-white/70">Win op</span>
+				<input
+					type="number"
+					inputmode="numeric"
+					class="input input-bordered input-lg border-primary/20 bg-base-100"
+					min="3"
+					max="30"
+					value={settings.winAt}
+					{disabled}
+					onchange={(e) => onChange({ winAt: Number(e.currentTarget.value) })}
+				/>
+			</label>
+			<label class="form-control">
+				<span class="label-text text-base text-white/70">Startkaarten</span>
+				<input
+					type="number"
+					inputmode="numeric"
+					class="input input-bordered input-lg border-primary/20 bg-base-100"
+					min="1"
+					max="5"
+					value={settings.startCards}
+					{disabled}
+					onchange={(e) => onChange({ startCards: Number(e.currentTarget.value) })}
+				/>
+			</label>
+			<label class="form-control">
+				<span class="label-text text-base text-white/70">Viesjes start</span>
+				<input
+					type="number"
+					inputmode="numeric"
+					class="input input-bordered input-lg border-primary/20 bg-base-100"
+					min="0"
+					max="10"
+					value={settings.tokensStart}
+					{disabled}
+					onchange={(e) => onChange({ tokensStart: Number(e.currentTarget.value) })}
+				/>
+			</label>
+		</div>
+	{/if}
 
 	<div class="grid grid-cols-2 gap-3">
-		<label class="form-control">
-			<span class="label-text text-base text-white/70">Win op</span>
-			<input
-				type="number"
-				inputmode="numeric"
-				class="input input-bordered input-lg border-primary/20 bg-base-100"
-				min="3"
-				max="30"
-				value={settings.winAt}
-				{disabled}
-				onchange={(e) => onChange({ winAt: Number(e.currentTarget.value) })}
-			/>
-		</label>
 		<label class="form-control">
 			<span class="label-text text-base text-white/70">Challenge (sec)</span>
 			<input
@@ -71,32 +105,6 @@
 				value={settings.challengeSeconds}
 				{disabled}
 				onchange={(e) => onChange({ challengeSeconds: Number(e.currentTarget.value) })}
-			/>
-		</label>
-		<label class="form-control">
-			<span class="label-text text-base text-white/70">Startkaarten</span>
-			<input
-				type="number"
-				inputmode="numeric"
-				class="input input-bordered input-lg border-primary/20 bg-base-100"
-				min="1"
-				max="5"
-				value={settings.startCards}
-				{disabled}
-				onchange={(e) => onChange({ startCards: Number(e.currentTarget.value) })}
-			/>
-		</label>
-		<label class="form-control">
-			<span class="label-text text-base text-white/70">Viesjes start</span>
-			<input
-				type="number"
-				inputmode="numeric"
-				class="input input-bordered input-lg border-primary/20 bg-base-100"
-				min="0"
-				max="10"
-				value={settings.tokensStart}
-				{disabled}
-				onchange={(e) => onChange({ tokensStart: Number(e.currentTarget.value) })}
 			/>
 		</label>
 		<label class="form-control">
@@ -162,88 +170,90 @@
 		</label>
 	</div>
 
-	<div class="space-y-3">
-		<div class="rounded-xl border border-primary/25 bg-base-100/50 p-3">
-			<p class="game-label mb-2">Host</p>
-			<label
-				class="flex min-h-14 cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition
-					{settings.hostPlays
-					? 'border-primary bg-primary/15'
-					: 'border-white/15 bg-base-100/40'}"
-			>
-				<input
-					type="checkbox"
-					class="checkbox checkbox-primary checkbox-lg mt-0.5 shrink-0"
-					checked={settings.hostPlays}
-					{disabled}
-					onchange={(e) => onChange({ hostPlays: e.currentTarget.checked })}
-				/>
-				<span class="min-w-0">
-					<span class="block text-base font-semibold text-white">Host speelt mee</span>
-					<span class="mt-0.5 block text-sm text-white/55">
-						Aan = host zit in de beurtenlijst. Uit = host is alleen DJ (geen bord).
+	{#if lobby}
+		<div class="space-y-3">
+			<div class="rounded-xl border border-primary/25 bg-base-100/50 p-3">
+				<p class="game-label mb-2">Host</p>
+				<label
+					class="flex min-h-14 cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition
+						{settings.hostPlays
+						? 'border-primary bg-primary/15'
+						: 'border-white/15 bg-base-100/40'}"
+				>
+					<input
+						type="checkbox"
+						class="checkbox checkbox-primary checkbox-lg mt-0.5 shrink-0"
+						checked={settings.hostPlays}
+						{disabled}
+						onchange={(e) => onChange({ hostPlays: e.currentTarget.checked })}
+					/>
+					<span class="min-w-0">
+						<span class="block text-base font-semibold text-white">Host speelt mee</span>
+						<span class="mt-0.5 block text-sm text-white/55">
+							Aan = host zit in de beurtenlijst. Uit = host is alleen DJ (geen bord).
+						</span>
 					</span>
-				</span>
-			</label>
-			<div class="mt-2 grid grid-cols-2 gap-2">
-				<button
-					type="button"
-					class="btn min-h-11 {settings.hostPlays
-						? 'btn-primary'
-						: 'btn-ghost border border-primary/25'}"
-					{disabled}
-					onclick={() => onChange({ hostPlays: true })}>Host speelt mee</button
-				>
-				<button
-					type="button"
-					class="btn min-h-11 {!settings.hostPlays
-						? 'btn-primary'
-						: 'btn-ghost border border-primary/25'}"
-					{disabled}
-					onclick={() => onChange({ hostPlays: false })}>Host alleen DJ</button
-				>
+				</label>
+				<div class="mt-2 grid grid-cols-2 gap-2">
+					<button
+						type="button"
+						class="btn min-h-11 {settings.hostPlays
+							? 'btn-primary'
+							: 'btn-ghost border border-primary/25'}"
+						{disabled}
+						onclick={() => onChange({ hostPlays: true })}>Host speelt mee</button
+					>
+					<button
+						type="button"
+						class="btn min-h-11 {!settings.hostPlays
+							? 'btn-primary'
+							: 'btn-ghost border border-primary/25'}"
+						{disabled}
+						onclick={() => onChange({ hostPlays: false })}>Host alleen DJ</button
+					>
+				</div>
 			</div>
 		</div>
+	{/if}
 
-		<div class="rounded-xl border border-primary/25 bg-base-100/50 p-3">
-			<p class="game-label mb-2">3-voor-1</p>
-			<label
-				class="flex min-h-14 cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition
-					{settings.threeForOneEnabled
-					? 'border-primary bg-primary/15'
-					: 'border-white/15 bg-base-100/40'}"
-			>
-				<input
-					type="checkbox"
-					class="checkbox checkbox-primary checkbox-lg mt-0.5 shrink-0"
-					checked={settings.threeForOneEnabled}
-					{disabled}
-					onchange={(e) => onChange({ threeForOneEnabled: e.currentTarget.checked })}
-				/>
-				<span class="min-w-0">
-					<span class="block text-base font-semibold text-white">3-voor-1 aankoop</span>
-					<span class="mt-0.5 block text-sm text-white/55">
-						Koop met viesjes een zichtbare kaart uit het deck (jaar zichtbaar), die
-						automatisch op je tijdlijn komt. Standaard: 3 viesjes → 1 kaart.
-					</span>
+	<div class="rounded-xl border border-primary/25 bg-base-100/50 p-3">
+		<p class="game-label mb-2">3-voor-1</p>
+		<label
+			class="flex min-h-14 cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition
+				{settings.threeForOneEnabled
+				? 'border-primary bg-primary/15'
+				: 'border-white/15 bg-base-100/40'}"
+		>
+			<input
+				type="checkbox"
+				class="checkbox checkbox-primary checkbox-lg mt-0.5 shrink-0"
+				checked={settings.threeForOneEnabled}
+				{disabled}
+				onchange={(e) => onChange({ threeForOneEnabled: e.currentTarget.checked })}
+			/>
+			<span class="min-w-0">
+				<span class="block text-base font-semibold text-white">3-voor-1 aankoop</span>
+				<span class="mt-0.5 block text-sm text-white/55">
+					Koop met viesjes een zichtbare kaart uit het deck (jaar zichtbaar), die
+					automatisch op je tijdlijn komt. Standaard: 3 viesjes → 1 kaart.
 				</span>
+			</span>
+		</label>
+		{#if settings.threeForOneEnabled}
+			<label class="form-control mt-3 max-w-xs">
+				<span class="label-text text-base text-white/70">Kosten in viesjes</span>
+				<input
+					type="number"
+					inputmode="numeric"
+					class="input input-bordered input-lg border-primary/20 bg-base-100"
+					min="1"
+					max="10"
+					value={settings.threeForOneCost}
+					{disabled}
+					onchange={(e) => onChange({ threeForOneCost: Number(e.currentTarget.value) })}
+				/>
 			</label>
-			{#if settings.threeForOneEnabled}
-				<label class="form-control mt-3 max-w-xs">
-					<span class="label-text text-base text-white/70">Kosten in viesjes</span>
-					<input
-						type="number"
-						inputmode="numeric"
-						class="input input-bordered input-lg border-primary/20 bg-base-100"
-						min="1"
-						max="10"
-						value={settings.threeForOneCost}
-						{disabled}
-						onchange={(e) => onChange({ threeForOneCost: Number(e.currentTarget.value) })}
-					/>
-				</label>
-			{/if}
-		</div>
+		{/if}
 	</div>
 
 	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -272,6 +282,7 @@
 				{disabled}
 				onchange={(e) => onChange({ playOffsetSec: Number(e.currentTarget.value) })}
 			/>
+			<span class="label-text-alt mt-1 text-xs text-white/40">Default 20s — springt in het nummer</span>
 		</label>
 	</div>
 </div>

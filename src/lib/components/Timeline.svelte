@@ -13,6 +13,8 @@
 		dimYears?: boolean;
 		/** Challenge mode: block locked + already-claimed slots (Hitster rule). */
 		challengePick?: boolean;
+		/** Animate this trackId as newly inserted */
+		insertTrackId?: string | null;
 	}
 
 	let {
@@ -24,12 +26,23 @@
 		playerColors = {},
 		onSelectSlot,
 		dimYears = false,
-		challengePick = false
+		challengePick = false,
+		insertTrackId = null
 	}: Props = $props();
 
 	let scroller: HTMLDivElement | undefined = $state();
 	let canScrollLeft = $state(false);
 	let canScrollRight = $state(false);
+	const slotEls = new Map<number, HTMLElement>();
+
+	function registerSlot(node: HTMLElement, slot: number) {
+		slotEls.set(slot, node);
+		return {
+			destroy() {
+				if (slotEls.get(slot) === node) slotEls.delete(slot);
+			}
+		};
+	}
 
 	function claimAt(slot: number) {
 		return claims.find((c) => c.slotIndex === slot);
@@ -54,6 +67,15 @@
 		canScrollRight = max > 2 && left < max - 2;
 	}
 
+	function scrollSlotIntoView(slot: number | null | undefined) {
+		if (slot == null || !scroller) return;
+		const node = slotEls.get(slot);
+		if (!node) return;
+		const parent = scroller;
+		const left = node.offsetLeft - parent.clientWidth / 2 + node.clientWidth / 2;
+		parent.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+	}
+
 	onMount(() => {
 		updateShadows();
 		const el = scroller;
@@ -74,7 +96,19 @@
 	$effect(() => {
 		void cards.length;
 		void interactive;
-		queueMicrotask(updateShadows);
+		void insertTrackId;
+		queueMicrotask(() => {
+			updateShadows();
+			if (insertTrackId) {
+				const idx = cards.findIndex((c) => c.trackId === insertTrackId);
+				if (idx >= 0) scrollSlotIntoView(idx);
+			}
+		});
+	});
+
+	$effect(() => {
+		const slot = selectedSlot ?? lockedSlot;
+		queueMicrotask(() => scrollSlotIntoView(slot));
 	});
 </script>
 
@@ -95,6 +129,7 @@
 			{@const canPick = interactive && !blocked}
 			<button
 				type="button"
+				use:registerSlot={slot}
 				class="slot-btn relative flex min-w-10 shrink-0 flex-col items-center justify-center rounded-xl border border-dashed transition
 					{canPick ? 'cursor-pointer hover:border-primary hover:bg-primary/10' : 'cursor-default'}
 					{selectedSlot === slot
@@ -138,9 +173,11 @@
 
 			{#if slot < cards.length}
 				{@const card = cards[slot]}
+				{@const isInsert = !!insertTrackId && card.trackId === insertTrackId}
 				<div
-					class="anim-enter flex min-w-28 shrink-0 flex-col justify-between rounded-2xl border border-white/10 bg-base-200/80 px-3 py-2 shadow-lg backdrop-blur"
-					style="animation-delay: {slot * 40}ms"
+					class="timeline-card anim-enter flex min-w-28 shrink-0 flex-col justify-between rounded-2xl border border-white/10 bg-base-200/80 px-3 py-2 shadow-lg backdrop-blur
+						{isInsert ? 'card-insert ring-2 ring-success/70' : ''}"
+					style="animation-delay: {isInsert ? '0ms' : `${Math.min(slot, 8) * 30}ms`}"
 				>
 					<p
 						class="font-display text-2xl leading-none text-accent {dimYears
@@ -164,6 +201,32 @@
 		min-height: 5.5rem;
 	}
 
+	.timeline-card {
+		transition:
+			transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+			margin 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+			opacity 0.45s ease;
+	}
+
+	.card-insert {
+		animation: card-drop-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+	}
+
+	@keyframes card-drop-in {
+		from {
+			opacity: 0;
+			transform: translateY(-18px) scale(0.86);
+		}
+		60% {
+			opacity: 1;
+			transform: translateY(3px) scale(1.03);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+
 	.timeline-fade::before,
 	.timeline-fade::after {
 		content: '';
@@ -171,7 +234,7 @@
 		position: absolute;
 		top: 0;
 		bottom: 0;
-		width: 2.5rem;
+		width: 2.75rem;
 		z-index: 2;
 		opacity: 0;
 		transition: opacity 0.2s ease;
@@ -181,22 +244,20 @@
 		left: 0;
 		background: linear-gradient(
 			to right,
-			rgba(10, 14, 24, 1) 0%,
-			rgba(10, 14, 24, 0.75) 40%,
+			rgba(0, 0, 0, 0.92) 0%,
+			rgba(0, 0, 0, 0.55) 45%,
 			transparent 100%
 		);
-		box-shadow: inset 10px 0 12px -8px rgba(255, 92, 51, 0.35);
 	}
 
 	.timeline-fade::after {
 		right: 0;
 		background: linear-gradient(
 			to left,
-			rgba(10, 14, 24, 1) 0%,
-			rgba(10, 14, 24, 0.75) 40%,
+			rgba(0, 0, 0, 0.92) 0%,
+			rgba(0, 0, 0, 0.55) 45%,
 			transparent 100%
 		);
-		box-shadow: inset -10px 0 12px -8px rgba(255, 92, 51, 0.35);
 	}
 
 	.timeline-fade.shadow-left::before,

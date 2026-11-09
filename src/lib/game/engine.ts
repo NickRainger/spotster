@@ -94,7 +94,8 @@ export function resolveTurn(
 		year: track.year,
 		title: track.title,
 		artist: track.artist,
-		message
+		message,
+		trackId: track.id
 	};
 	return { result, players: nextPlayers };
 }

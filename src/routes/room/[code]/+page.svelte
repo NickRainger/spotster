@@ -14,7 +14,7 @@
 	import { gameClient, loadSession } from '#lib/ws/client';
 	import { hostPlayer } from '#lib/spotify/player';
 
-	let name = $state('Speler');
+	let name = $state('');
 	let joined = $state(false);
 	let waitingRoom = $state(false);
 	let selectedSlot = $state<number | null>(null);
@@ -113,7 +113,7 @@
 		});
 
 		const sess = loadSession();
-		if (sess?.name) name = sess.name;
+		// Name input stays empty — no session prefill
 
 		if (sess?.code === code && sess.sessionToken) {
 			waitingRoom = true;
@@ -235,7 +235,12 @@
 		<h1 class="brand-word mt-2 text-6xl">spotster</h1>
 		<label class="form-control mt-8">
 			<span class="label-text">Jouw naam</span>
-			<input class="input input-bordered input-lg" bind:value={name} maxlength="20" />
+			<input
+				class="input input-bordered input-lg"
+				placeholder="bijv. Nick"
+				bind:value={name}
+				maxlength="20"
+			/>
 		</label>
 		{#if snap.error}<p class="mt-2 text-sm text-error">{snap.error}</p>{/if}
 		<button class="btn btn-primary btn-lg mt-4" onclick={doJoin}>Join room</button>
@@ -486,16 +491,28 @@
 					/>
 				</div>
 
-				{#if !privacyLocked && room.turn.lastResolve && (phase === 'RESOLVE' || phase === 'REVEAL' || phase === 'CHECK_WIN')}
-					<div class="border-l-4 border-accent pl-4">
-						<p class="font-display text-xl">{room.turn.lastResolve.message}</p>
-						<p class="mt-1 text-white/60">
-							{room.turn.lastResolve.title} — {room.turn.lastResolve.artist} ({room.turn.lastResolve
-								.year})
+				{#if !privacyLocked && room.turn.lastResolve && (phase === 'RESOLVE' || phase === 'CHECK_WIN')}
+					{@const r = room.turn.lastResolve}
+					{@const tone = r.stolenBy ? 'stolen' : r.correct || r.activeKept ? 'good' : 'miss'}
+					<div
+						class="score-banner anim-enter rounded-2xl border-2 px-4 py-4
+							{tone === 'good'
+							? 'border-success bg-success/15 text-success'
+							: tone === 'stolen'
+								? 'border-warning bg-warning/15 text-warning'
+								: 'border-error bg-error/15 text-error'}"
+						role="status"
+					>
+						<p class="text-xs font-bold uppercase tracking-[0.28em] opacity-80">
+							{tone === 'good' ? 'Goed' : tone === 'stolen' ? 'Gestolen' : 'Fout'}
+						</p>
+						<p class="font-display mt-1 text-2xl leading-tight sm:text-3xl">{r.message}</p>
+						<p class="mt-2 text-sm text-white/75">
+							{r.title} — {r.artist} ({r.year})
 						</p>
 					</div>
 				{:else if !privacyLocked && phase === 'REVEAL' && room.turn.track}
-					<div class="border-l-4 border-primary pl-4">
+					<div class="rounded-2xl border border-primary/40 bg-primary/10 px-4 py-3">
 						<p class="font-display text-3xl text-accent">{room.turn.track.year}</p>
 						<p class="text-lg font-semibold">{room.turn.track.title}</p>
 						<p class="text-white/60">{room.turn.track.artist}</p>
@@ -524,6 +541,10 @@
 							p.id !== myBoard?.id &&
 							p.id !== room.turn.activePlayerId
 					)}
+					{@const insertId =
+						room.turn.lastResolve && (phase === 'RESOLVE' || phase === 'CHECK_WIN')
+							? (room.turn.lastResolve.trackId ?? room.turn.track?.id ?? null)
+							: null}
 
 					<!-- 1) ACTIEVE SPELER BORD — onder de grote turn-banner -->
 					{#if activePlayer && myBoardIsActive}
@@ -554,6 +575,7 @@
 								lockedSlot={room.turn.lockedSlot}
 								claims={room.turn.claims}
 								playerColors={colorMap}
+								insertTrackId={room.turn.lastResolve?.activeKept ? insertId : null}
 								onSelectSlot={(s) => {
 									if (canGuess) selectedSlot = s;
 								}}
@@ -696,7 +718,12 @@
 								</span>
 							</div>
 
-							<Timeline cards={myBoard.timeline} />
+							<Timeline
+								cards={myBoard.timeline}
+								insertTrackId={room.turn.lastResolve?.stolenBy === myBoard.id
+									? insertId
+									: null}
+							/>
 						</section>
 					{/if}
 
@@ -716,7 +743,13 @@
 										</div>
 										{#if showAllTimelines}
 											<div class="min-w-0 grayscale">
-												<Timeline cards={p.timeline} dimYears />
+												<Timeline
+													cards={p.timeline}
+													dimYears
+													insertTrackId={room.turn.lastResolve?.stolenBy === p.id
+														? insertId
+														: null}
+												/>
 											</div>
 										{:else}
 											<p class="py-3 text-sm text-white/40">verborgen · privacy</p>
@@ -741,6 +774,16 @@
 								Koop kaart (−{room.settings.threeForOneCost} viesjes)
 							</button>
 						{/if}
+						{#if seatPlayer && room.settings.tokenEarnMode !== 'off'}
+							<button
+								class="btn btn-ghost btn-sm border border-secondary/30"
+								type="button"
+								onclick={() => gameClient.send({ type: 'request_token' })}
+								disabled={seatPlayer.tokens >= room.settings.tokensMax}
+							>
+								Vraag viesje (liedje goed)
+							</button>
+						{/if}
 						{#if isHost && (room.settings.challengeMode === 'host-reveal' || room.settings.challengeMode === 'both' || isSingle) && phase === 'CHALLENGE_WINDOW'}
 							<button class="btn btn-accent btn-sm" onclick={() => gameClient.send({ type: 'host_reveal' })}
 								>Reveal nu</button
@@ -756,6 +799,55 @@
 							>Leave</button
 						>
 					</div>
+
+					{#if isHost && room.settings.tokenEarnMode === 'host'}
+						<div class="game-section min-w-0 space-y-3">
+							<h2 class="game-h">
+								Liedje goed?
+								<span class="game-h-sub">keur titel / artiest goed → +1 viesje</span>
+							</h2>
+							<p class="text-sm text-white/55">
+								Speler noemt titel of artiest juist? Geef een viesje.
+							</p>
+							<div class="flex flex-col gap-2">
+								{#each room.players.filter((p) => room.turnOrder.includes(p.id)) as p}
+									<button
+										type="button"
+										class="btn btn-secondary btn-md min-h-12 w-full justify-between gap-3 sm:w-auto"
+										disabled={p.tokens >= room.settings.tokensMax}
+										onclick={() =>
+											gameClient.send({ type: 'token_earn_approve', playerId: p.id })}
+									>
+										<span class="flex min-w-0 items-center gap-2">
+											<span
+												class="h-2.5 w-2.5 shrink-0 rounded-full"
+												style="background:{p.color}"
+											></span>
+											<span class="truncate font-semibold">{p.name}</span>
+										</span>
+										<span class="shrink-0 text-sm">+1 viesje · nu {p.tokens}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
+
+					{#if isHost}
+						<details class="game-section min-w-0">
+							<summary class="game-h cursor-pointer select-none">
+								Settings mid-game
+								<span class="game-h-sub">o.a. start-offset · speelduur · challenge</span>
+							</summary>
+							<div class="mt-3">
+								<SettingsPanel
+									settings={room.settings}
+									mode="ingame"
+									disabled={!isHost}
+									onChange={patchSettings}
+								/>
+							</div>
+						</details>
+					{/if}
 				{/if}
 			</section>
 		{/if}

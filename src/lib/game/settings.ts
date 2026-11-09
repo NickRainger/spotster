@@ -16,9 +16,11 @@ export const DEFAULT_SETTINGS: GameSettings = {
 	hostPlays: true,
 	/** 0 = unlimited (volledig nummer); anders clip in seconden */
 	playDurationSec: 0,
-	playOffsetSec: 0,
+	/** Start playing this many seconds into the track */
+	playOffsetSec: 20,
 	disconnectGraceSec: 60,
-	autoFlowDelayMs: 1800
+	/** Base auto-flow delay; resolve stays up longer on top of this */
+	autoFlowDelayMs: 2200
 };
 
 /** Apply rules-variant presets, then keep any explicit overrides */

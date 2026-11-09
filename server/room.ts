@@ -318,20 +318,27 @@ export class Room {
 
 	private updateSettings(conn: Conn, partial: Partial<GameSettings>) {
 		this.requireHost(conn);
-		// Mid-game: only playback knobs (speelduur / offset / auto-flow)
+		// Mid-game: playback + challenge/token knobs (not winAt / variant / startCards)
 		if (this.phase !== 'lobby') {
 			const allowed: (keyof GameSettings)[] = [
 				'playDurationSec',
 				'playOffsetSec',
 				'autoFlowDelayMs',
-				'disconnectGraceSec'
+				'disconnectGraceSec',
+				'challengeMode',
+				'challengeSeconds',
+				'tokenEarnMode',
+				'tokensMax',
+				'threeForOneEnabled',
+				'threeForOneCost',
+				'skipCost'
 			];
 			const safe: Partial<GameSettings> = {};
 			for (const k of allowed) {
 				if (partial[k] !== undefined) (safe as Record<string, unknown>)[k] = partial[k];
 			}
 			if (!Object.keys(safe).length) {
-				throw new Error('Alleen speelduur/offset mid-game');
+				throw new Error('Die setting kan niet mid-game');
 			}
 			this.settings = mergeSettings(safe, this.settings);
 			this.broadcast();
@@ -845,7 +852,10 @@ export class Room {
 		this.turn.lastResolve = result;
 		this.phase = 'RESOLVE';
 		this.broadcast();
-		this.schedule('auto', this.settings.autoFlowDelayMs + 800, () => this.beginCheckWin());
+		// Keep score feedback up longer (green/yellow/red banner)
+		this.schedule('auto', Math.max(4200, this.settings.autoFlowDelayMs + 2000), () =>
+			this.beginCheckWin()
+		);
 	}
 
 	private beginCheckWin() {
@@ -855,13 +865,13 @@ export class Room {
 		this.broadcast();
 		if (winner) {
 			this.winnerId = winner;
-			this.schedule('auto', 800, () => {
+			this.schedule('auto', 1200, () => {
 				this.phase = 'GAME_OVER';
 				this.broadcast();
 			});
 		} else {
 			const next = nextPlayerId(this.turnOrder, this.turn.activePlayerId);
-			this.schedule('auto', 600, () => this.beginWaitingTurn(next));
+			this.schedule('auto', 900, () => this.beginWaitingTurn(next));
 		}
 	}
 

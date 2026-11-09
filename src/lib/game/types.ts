@@ -96,6 +96,8 @@ export interface ResolveResult {
 	title: string;
 	artist: string;
 	message: string;
+	/** Track that was resolved — for insert animation */
+	trackId?: string;
 }
 
 export interface SpotifyRoomInfo {
