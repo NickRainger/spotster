@@ -183,7 +183,7 @@
 
 	<div class="rounded-2xl border border-dashed border-white/15 bg-white/5 p-3">
 		<p class="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-secondary/80">
-			Spotify (HIT-4 stub)
+			Playback (mid-game wijzigbaar)
 		</p>
 		<div class="grid gap-3 sm:grid-cols-2">
 			<label class="form-control">
@@ -211,6 +211,8 @@
 				/>
 			</label>
 		</div>
-		<p class="mt-2 text-xs text-white/40">Nu: mock-deck met fake tracks. Geen Spotify-audio.</p>
+		<p class="mt-2 text-xs text-white/40">
+			Premium: Web Playback SDK · Free: 30s preview · anders mock. Connect via Spotify-panel.
+		</p>
 	</div>
 </div>

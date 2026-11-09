@@ -4,7 +4,8 @@
 	import { goto } from '$app/navigation';
 	import SettingsPanel from '#lib/components/SettingsPanel.svelte';
 	import Timeline from '#lib/components/Timeline.svelte';
-	import MockNowPlaying from '#lib/components/MockNowPlaying.svelte';
+	import SpotifyPanel from '#lib/components/SpotifyPanel.svelte';
+	import HostPlayback from '#lib/components/HostPlayback.svelte';
 	import { PHASE_LABELS } from '#lib/game/engine';
 	import type { GameSettings } from '#lib/game/types';
 	import { gameClient, loadSession } from '#lib/ws/client';
@@ -231,8 +232,31 @@
 								{/if}
 							</button>
 						</div>
+						{#if room.spotify}
+							<p class="text-xs text-white/40">
+								Audio: {room.spotify.source === 'spotify'
+									? `${room.spotify.playlistName ?? 'Spotify'} (${room.spotify.tier})`
+									: 'mock-deck'}
+							</p>
+						{/if}
 					{:else}
 						<p class="text-white/60">Wachten tot {room.players.find((p) => p.isHost)?.name ?? 'host'} start…</p>
+					{/if}
+
+					{#if isHost}
+						<SpotifyPanel
+							roomCode={room.code}
+							disabled={!isHost}
+							spotify={room.spotify ?? {
+								connected: false,
+								tier: 'unknown',
+								displayName: null,
+								playlistName: null,
+								playlistId: null,
+								source: 'mock'
+							}}
+							deckRemaining={room.deckRemaining}
+						/>
 					{/if}
 				</div>
 
@@ -256,9 +280,12 @@
 		{:else}
 			<!-- GAME -->
 			<section class="anim-enter mt-5 space-y-5">
-				<MockNowPlaying
-					playing={phase === 'HOST_PLAYING' || phase === 'GUESSING' || phase === 'GUESS_LOCKED' || phase === 'CHALLENGE_WINDOW'}
-					phaseLabel={PHASE_LABELS[phase]}
+				<HostPlayback
+					isHost={isHost}
+					{phase}
+					track={room.turn.track}
+					settings={room.settings}
+					spotifySource={room.spotify?.source ?? 'mock'}
 				/>
 
 				{#if phase === 'GAME_OVER'}

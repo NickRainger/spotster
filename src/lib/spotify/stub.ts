@@ -1,6 +1,6 @@
 /**
- * Spotify integration stubs — full implementation in HIT-4.
- * Host OAuth PKCE + Web Playback SDK (Premium) / preview path (Free).
+ * Spotify shared types + no-op stub.
+ * Real OAuth/API: `#lib/spotify/api`, playback: `#lib/spotify/player`.
  */
 
 export type SpotifyAccountTier = 'premium' | 'free' | 'unknown';
@@ -23,7 +23,6 @@ export interface SpotifyHostSession {
 	connected: boolean;
 	tier: SpotifyAccountTier;
 	displayName: string | null;
-	/** TODO HIT-4: PKCE tokens stay server-side */
 	hasRefreshToken: boolean;
 }
 
@@ -34,19 +33,13 @@ export interface SpotifyPlayerPort {
 	listPlaylists(): Promise<{ id: string; name: string }[]>;
 	play(uri: string, opts: SpotifyPlaybackSettings): Promise<void>;
 	pause(): Promise<void>;
-	/** iOS/autoplay: must be called from user gesture on host */
 	unlockAudio(): Promise<void>;
 }
 
-/** No-op stub used until HIT-4 wires real Spotify. */
+/** Fallback when env/OAuth missing — UI uses API routes + HostSpotifyPlayer instead. */
 export const spotifyStub: SpotifyPlayerPort = {
 	async connect() {
-		return {
-			connected: false,
-			tier: 'unknown',
-			displayName: null,
-			hasRefreshToken: false
-		};
+		return { connected: false, tier: 'unknown', displayName: null, hasRefreshToken: false };
 	},
 	async disconnect() {},
 	async search() {
@@ -56,7 +49,7 @@ export const spotifyStub: SpotifyPlayerPort = {
 		return [];
 	},
 	async play() {
-		console.info('[spotify stub] play — wire Web Playback in HIT-4');
+		console.info('[spotify] stub play — connect Spotify in lobby');
 	},
 	async pause() {},
 	async unlockAudio() {}

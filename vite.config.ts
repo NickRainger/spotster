@@ -16,8 +16,10 @@ export default defineConfig({
 		}),
 		spotsterGameServer()
 	],
+	envDir: '.',
 	server: {
 		host: true,
 		port: 5173
 	}
 });
+

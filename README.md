@@ -25,12 +25,16 @@ Open [http://localhost:5173](http://localhost:5173). Create a room on one device
 - State machine: WAITING_TURN → … → CHECK_WIN (auto-flow)
 - Lock-in, viesjes challenges, skip, 3-voor-1, host kick/skip
 - Session persistence + reconnect
-- Mock tracks with years (no Spotify audio yet)
+- Mock tracks with years (always available as fallback)
+- **Spotify (HIT-4):** host OAuth PKCE, playlists/search → deck, year overrides, Web Playback (Premium) / preview (Free), speelduur+offset mid-game
 
-## Out of scope here
+## Spotify setup
 
-- Spotify OAuth / Web Playback → HIT-4 (`src/lib/spotify/stub.ts`)
-- Single-device pass-and-play polish → HIT-5 (mode toggle stub exists)
+Copy `.env.example` → `.env` and set `SPOTIFY_CLIENT_ID` (+ redirect URI in the Spotify Dashboard). See status doc for details. Without env, mock-deck keeps working.
+
+## Later
+
+- Single-device pass-and-play polish → HIT-5
 
 ## Scripts
 

@@ -39,8 +39,18 @@ export class Room {
 	turn = emptyTurn();
 	winnerId: string | null = null;
 	deck: Track[] = [];
+	/** Full deck snapshot for re-deals (Spotify playlist) */
+	deckBackup: Track[] = [];
 	playMode: 'multi' | 'single' = 'multi';
 	createdAt = Date.now();
+	spotify = {
+		connected: false,
+		tier: 'unknown' as 'premium' | 'free' | 'unknown',
+		displayName: null as string | null,
+		playlistName: null as string | null,
+		playlistId: null as string | null,
+		source: 'mock' as 'mock' | 'spotify'
+	};
 	private conns = new Set<Conn>();
 	private timers = new Map<string, ReturnType<typeof setTimeout>>();
 	private turnIndexSeed = 0;
@@ -70,7 +80,11 @@ export class Room {
 			if (!c.playerId) continue;
 			const you = this.players.find((p) => p.id === c.playerId);
 			if (!you) continue;
-			c.send({ type: 'room', room: this.toPublic(), you: { playerId: you.id, sessionToken: you.sessionToken } });
+			c.send({
+				type: 'room',
+				room: this.toPublic(you.isHost),
+				you: { playerId: you.id, sessionToken: you.sessionToken }
+			});
 		}
 	}
 
@@ -80,7 +94,26 @@ export class Room {
 		}
 	}
 
-	toPublic(): RoomPublic {
+	toPublic(forHost = false): RoomPublic {
+		const revealed =
+			this.phase === 'REVEAL' ||
+			this.phase === 'RESOLVE' ||
+			this.phase === 'CHECK_WIN' ||
+			this.phase === 'GAME_OVER';
+		let track = this.turn.track;
+		if (track && !revealed) {
+			track = {
+				...track,
+				title: '???',
+				artist: '???',
+				year: 0,
+				imageUrl: forHost ? track.imageUrl : null
+			};
+			// Playback URLs only for host (anti-cheat + device plays)
+			if (!forHost) {
+				track = { ...track, spotifyUri: undefined, previewUrl: null };
+			}
+		}
 		return {
 			code: this.code,
 			phase: this.phase,
@@ -89,27 +122,13 @@ export class Room {
 			turnOrder: this.turnOrder,
 			turn: {
 				...this.turn,
-				// Hide title/artist until reveal (keep year secret always until reveal)
-				track:
-					this.turn.track &&
-					(this.phase === 'REVEAL' ||
-						this.phase === 'RESOLVE' ||
-						this.phase === 'CHECK_WIN' ||
-						this.phase === 'GAME_OVER')
-						? this.turn.track
-						: this.turn.track
-							? {
-									...this.turn.track,
-									title: '???',
-									artist: '???',
-									year: 0
-								}
-							: null
+				track
 			},
 			winnerId: this.winnerId,
 			deckRemaining: this.deck.length,
 			playMode: this.playMode,
-			createdAt: this.createdAt
+			createdAt: this.createdAt,
+			spotify: { ...this.spotify }
 		};
 	}
 
@@ -169,6 +188,15 @@ export class Room {
 					break;
 				case 'set_play_mode':
 					this.setPlayMode(conn, msg.mode);
+					break;
+				case 'set_deck':
+					this.setDeck(conn, msg);
+					break;
+				case 'set_year_override':
+					this.setYearOverride(conn, msg.trackId, msg.year);
+					break;
+				case 'spotify_status':
+					this.setSpotifyStatus(conn, msg);
 					break;
 				default:
 					conn.send({ type: 'error', message: 'Onbekend bericht' });
@@ -256,7 +284,25 @@ export class Room {
 
 	private updateSettings(conn: Conn, partial: Partial<GameSettings>) {
 		this.requireHost(conn);
-		if (this.phase !== 'lobby') throw new Error('Settings alleen in lobby');
+		// Mid-game: only playback knobs (speelduur / offset / auto-flow)
+		if (this.phase !== 'lobby') {
+			const allowed: (keyof GameSettings)[] = [
+				'playDurationSec',
+				'playOffsetSec',
+				'autoFlowDelayMs',
+				'disconnectGraceSec'
+			];
+			const safe: Partial<GameSettings> = {};
+			for (const k of allowed) {
+				if (partial[k] !== undefined) (safe as Record<string, unknown>)[k] = partial[k];
+			}
+			if (!Object.keys(safe).length) {
+				throw new Error('Alleen speelduur/offset mid-game');
+			}
+			this.settings = mergeSettings(safe, this.settings);
+			this.broadcast();
+			return;
+		}
 		if (partial.rulesVariant && partial.rulesVariant !== this.settings.rulesVariant) {
 			this.settings = mergeSettings(partial, applyVariantPreset(partial.rulesVariant, this.settings));
 		} else {
@@ -331,6 +377,96 @@ export class Room {
 		this.broadcast();
 	}
 
+	private setSpotifyStatus(
+		conn: Conn,
+		msg: {
+			connected: boolean;
+			tier: 'premium' | 'free' | 'unknown';
+			displayName?: string | null;
+		}
+	) {
+		this.requireHost(conn);
+		this.spotify.connected = msg.connected;
+		this.spotify.tier = msg.tier;
+		this.spotify.displayName = msg.displayName ?? null;
+		if (!msg.connected) {
+			this.spotify.source = 'mock';
+			this.spotify.playlistId = null;
+			this.spotify.playlistName = null;
+		}
+		this.broadcast();
+	}
+
+	private setDeck(
+		conn: Conn,
+		msg: {
+			tracks: Track[];
+			playlistName?: string;
+			playlistId?: string;
+			source?: 'mock' | 'spotify';
+		}
+	) {
+		this.requireHost(conn);
+		if (this.phase !== 'lobby' && this.phase !== 'GAME_OVER') {
+			throw new Error('Deck alleen in lobby wijzigen');
+		}
+		const source = msg.source ?? 'spotify';
+		if (source === 'mock' || !msg.tracks?.length) {
+			this.deck = [];
+			this.deckBackup = [];
+			this.spotify.source = 'mock';
+			this.spotify.playlistName = null;
+			this.spotify.playlistId = null;
+			this.broadcast();
+			return;
+		}
+		const COLORS = ['#e11d48', '#f59e0b', '#0ea5e9', '#22c55e', '#a855f7', '#ef4444', '#14b8a6'];
+		this.deck = msg.tracks.map((t, i) => {
+			const baseYear = t.yearOverride ?? t.spotifyYear ?? t.year;
+			if (!baseYear || baseYear < 1900) {
+				throw new Error(`Track zonder geldig jaar: ${t.title}`);
+			}
+			return {
+				...t,
+				year: baseYear,
+				spotifyYear: t.spotifyYear ?? t.year,
+				mockColor: t.mockColor || COLORS[i % COLORS.length]
+			};
+		});
+		for (let i = this.deck.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+		}
+		this.spotify.source = 'spotify';
+		this.spotify.playlistName = msg.playlistName ?? null;
+		this.spotify.playlistId = msg.playlistId ?? null;
+		this.deckBackup = this.deck.map((t) => ({ ...t }));
+		this.broadcast();
+	}
+
+	private setYearOverride(conn: Conn, trackId: string, year: number | null) {
+		this.requireHost(conn);
+		const apply = (t: Track): Track => {
+			if (t.id !== trackId) return t;
+			const next = {
+				...t,
+				yearOverride: year,
+				year: year ?? t.spotifyYear ?? t.year
+			};
+			return next;
+		};
+		this.deck = this.deck.map(apply);
+		if (this.turn.track?.id === trackId) {
+			this.turn.track = apply(this.turn.track);
+		}
+		for (const p of this.players) {
+			p.timeline = p.timeline.map((c) =>
+				c.trackId === trackId ? { ...c, year: year ?? c.year } : c
+			);
+		}
+		this.broadcast();
+	}
+
 	private start(conn: Conn) {
 		this.requireHost(conn);
 		if (this.phase !== 'lobby' && this.phase !== 'GAME_OVER') throw new Error('Spel loopt al');
@@ -338,7 +474,20 @@ export class Room {
 			? this.players
 			: this.players.filter((p) => !p.isHost);
 		if (playing.length < 1) throw new Error('Minimaal 1 meespelende speler nodig');
-		this.deck = shuffledDeck();
+		// Keep Spotify deck if loaded; otherwise mock
+		if (this.spotify.source === 'spotify' && this.deckBackup.length >= 5) {
+			this.deck = this.deckBackup.map((t) => ({ ...t }));
+			for (let i = this.deck.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+			}
+		} else {
+			this.deck = shuffledDeck();
+			this.spotify.source = 'mock';
+			this.spotify.playlistName = null;
+			this.spotify.playlistId = null;
+			this.deckBackup = [];
+		}
 		this.winnerId = null;
 		this.turn = emptyTurn();
 		this.turnOrder = this.turnOrder.filter((id) => playing.some((p) => p.id === id));

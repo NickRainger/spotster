@@ -40,8 +40,15 @@ export interface Track {
 	title: string;
 	artist: string;
 	year: number;
-	/** Mock audio hint — no real Spotify yet */
+	/** Visual accent for mock / cards */
 	mockColor: string;
+	/** Spotify fields (HIT-4) — optional; mock deck omits these */
+	spotifyUri?: string;
+	previewUrl?: string | null;
+	/** Album release year before override */
+	spotifyYear?: number | null;
+	yearOverride?: number | null;
+	imageUrl?: string | null;
 }
 
 export interface TimelineCard {
@@ -91,6 +98,15 @@ export interface ResolveResult {
 	message: string;
 }
 
+export interface SpotifyRoomInfo {
+	connected: boolean;
+	tier: 'premium' | 'free' | 'unknown';
+	displayName: string | null;
+	playlistName: string | null;
+	playlistId: string | null;
+	source: 'mock' | 'spotify';
+}
+
 export interface RoomPublic {
 	code: string;
 	phase: GamePhase;
@@ -103,6 +119,7 @@ export interface RoomPublic {
 	/** Single-device stub flag — HIT-5 */
 	playMode: 'multi' | 'single';
 	createdAt: number;
+	spotify: SpotifyRoomInfo;
 }
 
 export type ClientMessage =
@@ -123,7 +140,21 @@ export type ClientMessage =
 	| { type: 'host_force_phase'; phase: GamePhase }
 	| { type: 'token_earn_approve'; playerId: string }
 	| { type: 'request_token' }
-	| { type: 'set_play_mode'; mode: 'multi' | 'single' };
+	| { type: 'set_play_mode'; mode: 'multi' | 'single' }
+	| {
+			type: 'set_deck';
+			tracks: Track[];
+			playlistName?: string;
+			playlistId?: string;
+			source?: 'mock' | 'spotify';
+	  }
+	| { type: 'set_year_override'; trackId: string; year: number | null }
+	| {
+			type: 'spotify_status';
+			connected: boolean;
+			tier: 'premium' | 'free' | 'unknown';
+			displayName?: string | null;
+	  };
 
 export type ServerMessage =
 	| { type: 'room'; room: RoomPublic; you: { playerId: string; sessionToken: string } }

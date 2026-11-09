@@ -1,0 +1,43 @@
+import { redirect } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { exchangeCode } from '#lib/spotify/api';
+import { cookieOpts, newSessionId, PKCE_COOKIE, SPOTIFY_SESSION_COOKIE } from '#lib/spotify/session-cookie';
+import { putTokens } from '#lib/spotify/token-store';
+
+export const GET: RequestHandler = async ({ url, cookies }) => {
+	const code = url.searchParams.get('code');
+	const state = url.searchParams.get('state');
+	const err = url.searchParams.get('error');
+
+	const raw = cookies.get(PKCE_COOKIE);
+	cookies.delete(PKCE_COOKIE, { path: '/' });
+
+	let pkce: { verifier: string; state: string; returnTo: string } | null = null;
+	try {
+		pkce = raw ? JSON.parse(raw) : null;
+	} catch {
+		pkce = null;
+	}
+
+	if (err) {
+		redirect(302, `${pkce?.returnTo || '/'}?spotify=error&reason=${encodeURIComponent(err)}`);
+	}
+	if (!code || !pkce || !state || state !== pkce.state) {
+		redirect(302, `${pkce?.returnTo || '/'}?spotify=error&reason=invalid_state`);
+	}
+
+	try {
+		const tokens = await exchangeCode({
+			code,
+			verifier: pkce.verifier,
+			origin: url.origin
+		});
+		const sid = newSessionId();
+		putTokens(sid, tokens);
+		cookies.set(SPOTIFY_SESSION_COOKIE, sid, cookieOpts());
+		redirect(302, `${pkce.returnTo || '/'}?spotify=connected`);
+	} catch (e) {
+		const reason = e instanceof Error ? e.message : 'exchange_failed';
+		redirect(302, `${pkce.returnTo || '/'}?spotify=error&reason=${encodeURIComponent(reason)}`);
+	}
+};

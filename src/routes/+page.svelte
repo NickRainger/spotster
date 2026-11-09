@@ -43,9 +43,9 @@
 	}
 </script>
 
-<main class="relative mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-5 pb-10 pt-8 sm:pt-14">
-	<section class="anim-enter relative flex flex-1 flex-col justify-center">
-		<div class="pointer-events-none absolute left-1/2 top-8 h-64 w-64 -translate-x-1/2 rounded-full bg-primary/15 blur-3xl anim-glow"></div>
+<main class="relative mx-auto flex min-h-[100svh] min-h-dvh w-full max-w-5xl flex-col px-5 pb-10 pt-8 sm:pt-14">
+	<section class="anim-enter relative flex min-h-[70svh] flex-1 flex-col justify-center">
+		<div class="pointer-events-none absolute left-1/2 top-8 h-64 w-64 -translate-x-1/2 rounded-full bg-primary/15 blur-3xl anim-glow" aria-hidden="true"></div>
 
 		<p class="mb-3 text-sm font-semibold uppercase tracking-[0.35em] text-secondary/90">party timeline</p>
 		<h1 class="brand-word text-[clamp(3.5rem,16vw,8rem)] leading-[0.85]">spotster</h1>

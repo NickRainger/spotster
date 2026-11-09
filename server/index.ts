@@ -1,5 +1,7 @@
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server as HttpServer } from 'node:http';
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 import type { ClientMessage } from '../src/lib/game/types.ts';
 import { RoomManager, type SendFn } from './room.ts';
 
@@ -12,8 +14,26 @@ interface SockConn {
 	ws: WebSocket;
 }
 
+/**
+ * Attach game WS on `/ws` only via manual upgrade handling.
+ * Do NOT pass `{ server }` into WebSocketServer — that steals Vite HMR upgrades
+ * (`ws://…/?token=…`) and causes "Invalid frame header" + blank/broken client UI.
+ */
 export function attachGameServer(server: HttpServer) {
-	const wss = new WebSocketServer({ server, path: '/ws' });
+	const wss = new WebSocketServer({ noServer: true });
+
+	const onUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+		const path = req.url?.split('?')[0] ?? '';
+		if (path !== '/ws') {
+			// Leave Vite HMR / other upgrades alone
+			return;
+		}
+		wss.handleUpgrade(req, socket, head, (ws) => {
+			wss.emit('connection', ws, req);
+		});
+	};
+
+	server.on('upgrade', onUpgrade);
 
 	wss.on('connection', (ws) => {
 		const conn: SockConn = {
@@ -53,7 +73,6 @@ export function attachGameServer(server: HttpServer) {
 					conn.send({ type: 'error', message: 'Room niet gevonden' });
 					return;
 				}
-				// Move conn between rooms if needed
 				if (conn.roomCode && conn.roomCode !== code) {
 					manager.get(conn.roomCode)?.removeConn(conn);
 				}
