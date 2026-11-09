@@ -14,6 +14,7 @@
 
 	let name = $state('Speler');
 	let joined = $state(false);
+	let waitingRoom = $state(false);
 	let selectedSlot = $state<number | null>(null);
 	let challengeSlot = $state<number | null>(null);
 	let showSettings = $state(true);
@@ -76,6 +77,8 @@
 
 	onMount(() => {
 		gameClient.connect();
+		let waitTimer: ReturnType<typeof setTimeout> | null = null;
+
 		const unsub = gameClient.state.subscribe((s) => {
 			snap = {
 				connected: s.connected,
@@ -84,18 +87,58 @@
 				error: s.error,
 				lastKicked: s.lastKicked
 			};
-			if (s.room && s.room.code === code) joined = true;
-			if (s.lastKicked) joined = false;
+			if (s.room && s.room.code === code) {
+				joined = true;
+				waitingRoom = false;
+				if (waitTimer) {
+					clearTimeout(waitTimer);
+					waitTimer = null;
+				}
+			}
+			if (s.lastKicked) {
+				joined = false;
+				waitingRoom = false;
+			}
+			// Stale session / reconnect fail → back to join form, never infinite spinner
+			if (s.error && waitingRoom && !s.room) {
+				joined = false;
+				waitingRoom = false;
+				if (waitTimer) {
+					clearTimeout(waitTimer);
+					waitTimer = null;
+				}
+			}
 		});
 
 		const sess = loadSession();
 		if (sess?.name) name = sess.name;
 
 		if (sess?.code === code && sess.sessionToken) {
+			waitingRoom = true;
 			gameClient.send({ type: 'reconnect', code, sessionToken: sess.sessionToken });
-			joined = true;
+			waitTimer = setTimeout(() => {
+				if (!snap.room) {
+					waitingRoom = false;
+					joined = false;
+					gameClient.state.update((s) => ({
+						...s,
+						error: s.error ?? 'Room niet bereikbaar (server herstart?). Join opnieuw.'
+					}));
+				}
+			}, 8000);
 		} else if (sess?.code === code) {
+			waitingRoom = true;
 			gameClient.send({ type: 'join', code, name: sess.name || name });
+			waitTimer = setTimeout(() => {
+				if (!snap.room) {
+					waitingRoom = false;
+					joined = false;
+					gameClient.state.update((s) => ({
+						...s,
+						error: s.error ?? 'Kon niet joinen. Probeer opnieuw.'
+					}));
+				}
+			}, 8000);
 		}
 
 		const tick = setInterval(() => {
@@ -107,12 +150,24 @@
 		return () => {
 			unsub();
 			clearInterval(tick);
+			if (waitTimer) clearTimeout(waitTimer);
 		};
 	});
 
 	function doJoin() {
 		gameClient.clearError();
+		waitingRoom = true;
+		joined = false;
 		gameClient.send({ type: 'join', code, name: name.trim() || 'Speler' });
+		setTimeout(() => {
+			if (!snap.room) {
+				waitingRoom = false;
+				gameClient.state.update((s) => ({
+					...s,
+					error: s.error ?? 'Kon niet joinen. Check de code of maak een nieuwe room.'
+				}));
+			}
+		}, 8000);
 	}
 
 	function patchSettings(partial: Partial<GameSettings>) {
@@ -564,8 +619,29 @@
 			</section>
 		{/if}
 	</main>
-{:else}
-	<main class="grid min-h-dvh place-items-center">
+{:else if waitingRoom}
+	<main class="mx-auto flex min-h-dvh max-w-lg flex-col items-center justify-center gap-4 px-5 text-center">
 		<span class="loading loading-spinner loading-lg text-primary"></span>
+		<p class="text-sm text-white/60">Room {code} laden…</p>
+		{#if snap.error}
+			<p class="text-sm text-error">{snap.error}</p>
+			<button
+				class="btn btn-primary"
+				onclick={() => {
+					waitingRoom = false;
+					joined = false;
+				}}>Terug</button
+			>
+		{/if}
+		<a class="btn btn-ghost btn-sm" href="/">Home</a>
+	</main>
+{:else}
+	<main class="mx-auto flex min-h-dvh max-w-lg flex-col justify-center gap-3 px-5">
+		<p class="text-sm uppercase tracking-[0.3em] text-secondary">room {code}</p>
+		<h1 class="brand-word text-5xl">spotster</h1>
+		<p class="text-white/60">Geen actieve sessie voor deze room.</p>
+		{#if snap.error}<p class="text-sm text-error">{snap.error}</p>{/if}
+		<button class="btn btn-primary" onclick={() => (joined = false)}>Join met naam</button>
+		<a class="btn btn-ghost" href="/">Home</a>
 	</main>
 {/if}

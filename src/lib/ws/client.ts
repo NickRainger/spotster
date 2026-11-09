@@ -118,7 +118,16 @@ export class GameClient {
 					lastKicked: null
 				});
 			} else if (msg.type === 'error') {
-				this.state.update((s) => ({ ...s, error: msg.message }));
+				const stale =
+					/room niet gevonden/i.test(msg.message) ||
+					/ongeldige sessie/i.test(msg.message) ||
+					/sessie/i.test(msg.message);
+				if (stale) saveSession(null);
+				this.state.update((s) => ({
+					...s,
+					error: msg.message,
+					...(stale ? { room: null, playerId: null, sessionToken: null } : {})
+				}));
 			} else if (msg.type === 'kicked') {
 				saveSession(null);
 				this.state.update((s) => ({

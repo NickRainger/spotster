@@ -24,22 +24,31 @@
 		return () => unsub();
 	});
 
-	function createRoom() {
+	function withBusyTimeout(action: () => void) {
 		error = null;
 		busy = true;
 		gameClient.clearError();
-		gameClient.send({ type: 'create', name: name.trim() || 'Host' });
+		action();
+		setTimeout(() => {
+			if (busy) {
+				busy = false;
+				error = 'Geen antwoord van de server. Vernieuw de pagina en probeer opnieuw.';
+			}
+		}, 8000);
+	}
+
+	function createRoom() {
+		withBusyTimeout(() => gameClient.send({ type: 'create', name: name.trim() || 'Host' }));
 	}
 
 	function joinRoom() {
-		error = null;
-		busy = true;
-		gameClient.clearError();
-		gameClient.send({
-			type: 'join',
-			code: joinCode.trim().toUpperCase(),
-			name: name.trim() || 'Speler'
-		});
+		withBusyTimeout(() =>
+			gameClient.send({
+				type: 'join',
+				code: joinCode.trim().toUpperCase(),
+				name: name.trim() || 'Speler'
+			})
+		);
 	}
 </script>
 
