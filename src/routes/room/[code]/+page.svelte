@@ -232,7 +232,7 @@
 	{/if}
 
 	<main
-		class="mx-auto min-h-dvh w-full max-w-7xl px-5 pb-24 pt-4 sm:px-8 lg:px-10
+		class="mx-auto min-h-dvh w-full max-w-7xl px-4 pb-28 pt-3 sm:px-8 sm:pb-24 sm:pt-4 lg:px-10
 			{privacyLocked ? 'pointer-events-none select-none blur-sm brightness-50' : ''}"
 	>
 		<header class="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-4">
@@ -264,17 +264,17 @@
 		{/if}
 
 		{#if !inGame}
-			<section class="anim-enter mt-10 space-y-12 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-20 lg:gap-y-12 lg:space-y-0">
-				<div class="space-y-10">
+			<section class="anim-enter mt-6 space-y-10 sm:mt-10 sm:space-y-12 lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-20 lg:gap-y-12 lg:space-y-0">
+				<div class="space-y-8 sm:space-y-10">
 					{#if isHost}
-						<div class="flex flex-wrap gap-2">
+						<div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
 							<button
-								class="btn btn-sm {room.playMode === 'multi' ? 'btn-primary' : 'btn-ghost border border-white/15'}"
+								class="btn min-h-12 text-sm sm:btn-sm {room.playMode === 'multi' ? 'btn-primary' : 'btn-ghost border border-white/15'}"
 								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'multi' })}
 								>Multi-device</button
 							>
 							<button
-								class="btn btn-sm {room.playMode === 'single' ? 'btn-secondary' : 'btn-ghost border border-white/15'}"
+								class="btn min-h-12 text-sm sm:btn-sm {room.playMode === 'single' ? 'btn-secondary' : 'btn-ghost border border-white/15'}"
 								onclick={() => gameClient.send({ type: 'set_play_mode', mode: 'single' })}
 								>Single-device</button
 							>
@@ -332,17 +332,19 @@
 					{#if isHost}
 						<div class="space-y-3">
 							<button
-								class="btn btn-primary btn-lg px-10"
+								class="btn btn-primary btn-lg min-h-14 w-full px-10 text-base sm:w-auto"
 								onclick={() => gameClient.send({ type: 'start' })}
 								disabled={isSingle && room.turnOrder.length < 1}
 								>Start spel</button
 							>
-							<p class="text-sm text-white/45">
+							<p class="text-base text-white/55 sm:text-sm sm:text-white/45">
 								Muziek:
 								{#if room.spotify?.source === 'spotify' && room.spotify.playlistName}
 									<span class="text-secondary">{room.spotify.playlistName}</span>
 								{:else}
-									<span class="text-white/60">mock-deck</span> — kies rechts een playlist
+									<span class="text-white/60">mock-deck</span>
+									<span class="hidden sm:inline"> — kies rechts een playlist</span>
+									<span class="sm:hidden"> — kies hieronder</span>
 								{/if}
 							</p>
 						</div>
@@ -355,19 +357,21 @@
 					<div>
 						<button
 							type="button"
-							class="mb-3 flex w-full items-baseline justify-between gap-3 text-left"
+							class="mb-3 flex min-h-12 w-full items-center justify-between gap-3 text-left"
 							onclick={() => (showSettings = !showSettings)}
 						>
 							<div>
-								<h2 class="font-display text-2xl">Regels</h2>
+								<h2 class="font-display text-2xl sm:text-2xl">Regels</h2>
 								{#if !showSettings}
-									<p class="text-sm text-white/40">
+									<p class="text-base text-white/50 sm:text-sm sm:text-white/40">
 										{room.settings.rulesVariant} · win op {room.settings.winAt} · {room.settings
-											.challengeSeconds}s challenge
+											.challengeSeconds}s
 									</p>
 								{/if}
 							</div>
-							<span class="text-sm text-white/40">{showSettings ? 'verberg' : 'pas aan'}</span>
+							<span class="shrink-0 text-base text-primary sm:text-sm sm:text-white/40"
+								>{showSettings ? 'verberg' : 'pas aan'}</span
+							>
 						</button>
 						{#if showSettings}
 							<SettingsPanel settings={room.settings} disabled={!isHost} onChange={patchSettings} />
@@ -376,14 +380,16 @@
 				</div>
 
 				{#if isHost}
-					<div>
+					<div class="min-w-0">
 						<button
 							type="button"
-							class="mb-3 flex w-full items-baseline justify-between gap-3 text-left"
+							class="mb-3 flex min-h-12 w-full items-center justify-between gap-3 text-left"
 							onclick={() => (showMusic = !showMusic)}
 						>
 							<h2 class="font-display text-2xl">Muziek</h2>
-							<span class="text-sm text-white/40">{showMusic ? 'verberg' : 'toon'}</span>
+							<span class="shrink-0 text-base text-primary sm:text-sm sm:text-white/40"
+								>{showMusic ? 'verberg' : 'toon'}</span
+							>
 						</button>
 						{#if showMusic}
 							<SpotifyPanel
@@ -594,23 +600,24 @@
 							{/if}
 						</section>
 					{:else if !isSingle && activePlayer && me && activePlayer.id !== me.id && (phase === 'HOST_PLAYING' || phase === 'GUESSING' || phase === 'GUESS_LOCKED')}
-						<section class="opacity-70" aria-label="Bord van actieve speler">
-							<p class="mb-1 text-xs font-semibold uppercase tracking-[0.25em] text-white/35">
+						<section class="active-board-ref" aria-label="Bord van actieve speler">
+							<p class="mb-1 text-xs font-semibold uppercase tracking-[0.25em] text-zinc-400">
 								Nu aan zet · niet jouw bord
 							</p>
 							<div class="mb-2 flex items-center gap-2">
-								<span class="h-2.5 w-2.5 rounded-full" style="background:{activePlayer.color}"
-								></span>
-								<h3 class="font-display text-xl text-white/70">{activePlayer.name}</h3>
-								<span class="text-xs text-white/35"
+								<span class="h-2.5 w-2.5 rounded-full bg-zinc-400"></span>
+								<h3 class="font-display text-xl text-zinc-300">{activePlayer.name}</h3>
+								<span class="text-xs text-zinc-500"
 									>{activePlayer.timeline.length}/{room.settings.winAt}</span
 								>
 							</div>
-							<Timeline
-								cards={activePlayer.timeline}
-								lockedSlot={room.turn.lockedSlot}
-								dimYears
-							/>
+							<div class="grayscale">
+								<Timeline
+									cards={activePlayer.timeline}
+									lockedSlot={room.turn.lockedSlot}
+									dimYears
+								/>
+							</div>
 						</section>
 					{/if}
 
@@ -631,11 +638,11 @@
 											>
 										</div>
 										{#if showAllTimelines}
-											<div class="origin-left scale-[0.92] opacity-80">
+											<div class="origin-left scale-[0.95] grayscale">
 												<Timeline cards={p.timeline} dimYears />
 											</div>
 										{:else}
-											<p class="py-3 text-xs text-white/30">verborgen · privacy</p>
+											<p class="py-3 text-sm text-white/40">verborgen · privacy</p>
 										{/if}
 									</div>
 								{/each}

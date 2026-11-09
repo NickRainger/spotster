@@ -20,12 +20,14 @@
 
 <div class="space-y-6">
 	<div>
-		<p class="mb-3 text-sm text-white/55">Kies een tempo. Fine-tune alleen als je wilt.</p>
-		<div class="flex flex-wrap gap-2">
+		<p class="mb-3 text-base text-white/60">Kies een tempo. Fine-tune alleen als je wilt.</p>
+		<div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
 			{#each variants as v}
 				<button
 					type="button"
-					class="btn btn-sm {settings.rulesVariant === v.id ? 'btn-primary' : 'btn-ghost border border-white/15'}"
+					class="btn min-h-12 text-base {settings.rulesVariant === v.id
+						? 'btn-primary'
+						: 'btn-ghost border border-white/15'}"
 					{disabled}
 					onclick={() => onChange({ rulesVariant: v.id })}
 				>
@@ -35,12 +37,13 @@
 		</div>
 	</div>
 
-	<div class="flex flex-wrap items-end gap-6">
-		<label class="form-control w-28">
-			<span class="label-text text-white/50">Win op</span>
+	<div class="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:items-end sm:gap-6">
+		<label class="form-control w-full sm:w-28">
+			<span class="label-text text-base text-white/55">Win op</span>
 			<input
 				type="number"
-				class="input input-bordered"
+				inputmode="numeric"
+				class="input input-bordered input-lg"
 				min="3"
 				max="30"
 				value={settings.winAt}
@@ -48,11 +51,12 @@
 				onchange={(e) => onChange({ winAt: Number(e.currentTarget.value) })}
 			/>
 		</label>
-		<label class="form-control w-36">
-			<span class="label-text text-white/50">Challenge (sec)</span>
+		<label class="form-control w-full sm:w-36">
+			<span class="label-text text-base text-white/55">Challenge (sec)</span>
 			<input
 				type="number"
-				class="input input-bordered"
+				inputmode="numeric"
+				class="input input-bordered input-lg"
 				min="3"
 				max="60"
 				value={settings.challengeSeconds}
@@ -60,21 +64,21 @@
 				onchange={(e) => onChange({ challengeSeconds: Number(e.currentTarget.value) })}
 			/>
 		</label>
-		<label class="label cursor-pointer gap-2 pb-2">
+		<label class="label col-span-2 min-h-12 cursor-pointer justify-start gap-3 py-2 sm:col-span-1 sm:pb-2">
 			<input
 				type="checkbox"
-				class="toggle toggle-primary toggle-sm"
+				class="toggle toggle-primary toggle-lg"
 				checked={settings.hostPlays}
 				{disabled}
 				onchange={(e) => onChange({ hostPlays: e.currentTarget.checked })}
 			/>
-			<span class="label-text">Host speelt mee</span>
+			<span class="label-text text-base">Host speelt mee</span>
 		</label>
 	</div>
 
 	<button
 		type="button"
-		class="text-sm text-white/45 underline-offset-4 hover:text-white/70 hover:underline"
+		class="btn btn-ghost min-h-12 w-full justify-start px-0 text-base text-white/55 underline-offset-4 hover:bg-transparent hover:text-white/80 hover:underline sm:w-auto"
 		onclick={() => (advanced = !advanced)}
 	>
 		{advanced ? 'Minder opties' : 'Meer opties'}
@@ -82,12 +86,13 @@
 
 	{#if advanced}
 		<div class="space-y-4 border-t border-white/10 pt-4">
-			<div class="grid gap-3 sm:grid-cols-3">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 				<label class="form-control">
-					<span class="label-text text-white/50">Startkaarten</span>
+					<span class="label-text text-base text-white/55">Startkaarten</span>
 					<input
 						type="number"
-						class="input input-bordered"
+						inputmode="numeric"
+						class="input input-bordered input-lg"
 						min="1"
 						max="5"
 						value={settings.startCards}
@@ -96,10 +101,11 @@
 					/>
 				</label>
 				<label class="form-control">
-					<span class="label-text text-white/50">Viesjes start</span>
+					<span class="label-text text-base text-white/55">Viesjes start</span>
 					<input
 						type="number"
-						class="input input-bordered"
+						inputmode="numeric"
+						class="input input-bordered input-lg"
 						min="0"
 						max="10"
 						value={settings.tokensStart}
@@ -108,10 +114,11 @@
 					/>
 				</label>
 				<label class="form-control">
-					<span class="label-text text-white/50">Viesjes max</span>
+					<span class="label-text text-base text-white/55">Viesjes max</span>
 					<input
 						type="number"
-						class="input input-bordered"
+						inputmode="numeric"
+						class="input input-bordered input-lg"
 						min="0"
 						max="15"
 						value={settings.tokensMax}
@@ -121,11 +128,11 @@
 				</label>
 			</div>
 
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<label class="form-control">
-					<span class="label-text text-white/50">Challenge-modus</span>
+					<span class="label-text text-base text-white/55">Challenge-modus</span>
 					<select
-						class="select select-bordered"
+						class="select select-bordered select-lg"
 						value={settings.challengeMode}
 						{disabled}
 						onchange={(e) =>
@@ -139,9 +146,9 @@
 					</select>
 				</label>
 				<label class="form-control">
-					<span class="label-text text-white/50">Token verdienen</span>
+					<span class="label-text text-base text-white/55">Token verdienen</span>
 					<select
-						class="select select-bordered"
+						class="select select-bordered select-lg"
 						value={settings.tokenEarnMode}
 						{disabled}
 						onchange={(e) =>
@@ -156,23 +163,24 @@
 				</label>
 			</div>
 
-			<div class="flex flex-wrap items-end gap-4">
-				<label class="label cursor-pointer gap-2">
+			<div class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+				<label class="label min-h-12 cursor-pointer justify-start gap-3">
 					<input
 						type="checkbox"
-						class="toggle toggle-primary toggle-sm"
+						class="toggle toggle-primary toggle-lg"
 						checked={settings.threeForOneEnabled}
 						{disabled}
 						onchange={(e) => onChange({ threeForOneEnabled: e.currentTarget.checked })}
 					/>
-					<span class="label-text">3-voor-1</span>
+					<span class="label-text text-base">3-voor-1</span>
 				</label>
 				{#if settings.threeForOneEnabled}
-					<label class="form-control w-24">
-						<span class="label-text text-white/50">Kosten</span>
+					<label class="form-control w-full sm:w-28">
+						<span class="label-text text-base text-white/55">Kosten</span>
 						<input
 							type="number"
-							class="input input-bordered input-sm"
+							inputmode="numeric"
+							class="input input-bordered input-lg"
 							min="1"
 							max="10"
 							value={settings.threeForOneCost}
@@ -181,11 +189,12 @@
 						/>
 					</label>
 				{/if}
-				<label class="form-control w-28">
-					<span class="label-text text-white/50">Skip-kosten</span>
+				<label class="form-control w-full sm:w-28">
+					<span class="label-text text-base text-white/55">Skip-kosten</span>
 					<input
 						type="number"
-						class="input input-bordered input-sm"
+						inputmode="numeric"
+						class="input input-bordered input-lg"
 						min="0"
 						max="5"
 						value={settings.skipCost}
@@ -195,12 +204,13 @@
 				</label>
 			</div>
 
-			<div class="grid gap-3 sm:grid-cols-2">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<label class="form-control">
-					<span class="label-text text-white/50">Speelduur (sec)</span>
+					<span class="label-text text-base text-white/55">Speelduur (sec)</span>
 					<input
 						type="number"
-						class="input input-bordered"
+						inputmode="numeric"
+						class="input input-bordered input-lg"
 						min="5"
 						max="120"
 						value={settings.playDurationSec}
@@ -209,10 +219,11 @@
 					/>
 				</label>
 				<label class="form-control">
-					<span class="label-text text-white/50">Start-offset (sec)</span>
+					<span class="label-text text-base text-white/55">Start-offset (sec)</span>
 					<input
 						type="number"
-						class="input input-bordered"
+						inputmode="numeric"
+						class="input input-bordered input-lg"
 						min="0"
 						max="180"
 						value={settings.playOffsetSec}

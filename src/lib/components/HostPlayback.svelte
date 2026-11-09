@@ -21,7 +21,9 @@
 		deviceId: null,
 		ready: false,
 		playing: false,
-		error: null
+		error: null,
+		unlocked: false,
+		needsGesture: false
 	});
 	let lastPlayKey = $state<string | null>(null);
 
@@ -42,6 +44,17 @@
 					: 'Mock-deck'
 	);
 
+	const playOpts = $derived(
+		track
+			? {
+					uri: track.spotifyUri,
+					previewUrl: track.previewUrl,
+					playDurationSec: settings.playDurationSec,
+					playOffsetSec: settings.playOffsetSec
+				}
+			: null
+	);
+
 	onMount(() => {
 		if (!isHost || !hostPlayer) return;
 		const unsub = hostPlayer.onStatus((s) => {
@@ -56,9 +69,8 @@
 
 	$effect(() => {
 		if (!isHost || !hostPlayer) return;
-		const shouldPlay = activePlayPhases.includes(phase) && !!track;
 
-		if (!shouldPlay) {
+		if (!activePlayPhases.includes(phase) || !track) {
 			if (phase === 'REVEAL' || phase === 'RESOLVE' || phase === 'WAITING_TURN' || phase === 'lobby') {
 				void hostPlayer.pause();
 				lastPlayKey = null;
@@ -66,49 +78,103 @@
 			return;
 		}
 
-		// Start playback when entering HOST_PLAYING for this track
-		if (phase === 'HOST_PLAYING' && track && lastPlayKey !== `play:${track.id}`) {
+		// Attempt auto-start once per track (same playTrack path as manual Play).
+		// Without prior Unlock this sets needsGesture instead of faking audio.
+		if (phase === 'HOST_PLAYING' && lastPlayKey !== `play:${track.id}`) {
 			lastPlayKey = `play:${track.id}`;
 			void hostPlayer.playTrack({
 				uri: track.spotifyUri,
 				previewUrl: track.previewUrl,
 				playDurationSec: settings.playDurationSec,
 				playOffsetSec: settings.playOffsetSec,
-				mockFallback: () => {
-					/* visual still shows track art */
-				}
+				fromUserGesture: status.unlocked,
+				mockFallback: () => {}
 			});
 		}
 	});
+
+	function onPlayTap() {
+		if (!hostPlayer || !playOpts) return;
+		void hostPlayer.playFromUserGesture({
+			...playOpts,
+			mockFallback: () => {}
+		});
+	}
+
+	function onPauseTap() {
+		void hostPlayer?.pause();
+	}
+
+	function onResumeTap() {
+		if (status.needsGesture || !status.unlocked) {
+			onPlayTap();
+			return;
+		}
+		void hostPlayer?.resume();
+	}
 </script>
 
 {#if isHost}
-	<div class="space-y-2">
+	<div class="space-y-3">
 		<MockNowPlaying
-			playing={status.playing || activePlayPhases.includes(phase)}
+			playing={status.playing}
 			phaseLabel={PHASE_LABELS[phase]}
 			{track}
 			{modeLabel}
 		/>
-		<div class="flex flex-wrap items-center gap-2 px-1 text-xs text-white/50">
-			<span class="badge badge-sm badge-outline">{modeLabel}</span>
-			{#if status.ready && status.mode === 'premium'}
-				<span class="text-secondary">device ready</span>
-			{:else if status.mode === 'none' || !status.ready}
-				<span class="text-warning">player init…</span>
-			{/if}
-			<span>{settings.playDurationSec}s · offset {settings.playOffsetSec}s</span>
-			{#if status.error}
-				<span class="text-warning">{status.error}</span>
-			{/if}
-			<button class="btn btn-ghost btn-xs" onclick={() => hostPlayer?.unlockAudio()}>Unlock</button>
-			<button class="btn btn-ghost btn-xs" onclick={() => hostPlayer?.pause()}>Pause</button>
-		</div>
-		{#if spotifySource === 'spotify' && status.mode !== 'premium' && status.mode !== 'preview'}
-			<p class="px-1 text-xs text-white/40">
-				Tip: klik <strong>Unlock</strong> in de lobby of hier, daarna speelt Spotify bij Start.
+
+		{#if status.needsGesture && track && activePlayPhases.includes(phase)}
+			<button
+				type="button"
+				class="btn btn-primary btn-lg min-h-14 w-full text-base sm:w-auto"
+				onclick={onPlayTap}
+			>
+				Speel dit nummer
+			</button>
+			<p class="text-sm text-warning">
+				Browser blokkeert autoplay — één tik start Spotify (zelfde pad als handmatig).
 			</p>
 		{/if}
+
+		<div class="flex flex-wrap items-center gap-2">
+			{#if status.playing}
+				<button type="button" class="btn btn-outline btn-md min-h-12 min-w-24" onclick={onPauseTap}
+					>Pauze</button
+				>
+			{:else if track && activePlayPhases.includes(phase)}
+				<button type="button" class="btn btn-primary btn-md min-h-12 min-w-24" onclick={onResumeTap}
+					>Speel</button
+				>
+			{/if}
+			<button
+				type="button"
+				class="btn btn-ghost btn-md min-h-12"
+				onclick={() => hostPlayer?.unlockAudio()}>Unlock</button
+			>
+			{#if track && status.mode === 'premium'}
+				<button
+					type="button"
+					class="btn btn-ghost btn-md min-h-12"
+					onclick={() => hostPlayer?.seek((settings.playOffsetSec ?? 0) * 1000)}>Naar start</button
+				>
+			{/if}
+		</div>
+
+		<div class="flex flex-wrap items-center gap-2 px-0.5 text-xs text-white/50 sm:text-sm">
+			<span class="badge badge-sm badge-outline">{modeLabel}</span>
+			{#if status.unlocked}
+				<span class="text-secondary">unlocked</span>
+			{:else}
+				<span class="text-warning">locked</span>
+			{/if}
+			{#if status.ready && status.mode === 'premium'}
+				<span class="text-secondary">device ready</span>
+			{/if}
+			<span>{settings.playDurationSec}s</span>
+			{#if status.error}
+				<span class="w-full text-warning sm:w-auto">{status.error}</span>
+			{/if}
+		</div>
 	</div>
 {:else}
 	<MockNowPlaying

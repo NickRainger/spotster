@@ -131,3 +131,9 @@ body {
 	scrollbar-width: thin;
 	scrollbar-color: rgba(255, 92, 51, 0.5) transparent;
 }
+
+/* Active opponent board: full opacity, grey — not faded transparency */
+.active-board-ref {
+	opacity: 1;
+	color: #a1a1aa;
+}

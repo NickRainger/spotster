@@ -349,7 +349,7 @@
 				Zoek playlist
 			</p>
 			<input
-				class="input input-bordered w-full"
+				class="input input-bordered input-lg w-full"
 				placeholder="Zoek in jouw lijst of op Spotify…"
 				bind:value={playlistQuery}
 				disabled={disabled}
@@ -391,7 +391,7 @@
 						<button
 							type="button"
 							aria-pressed={selected}
-							class="flex w-full items-center gap-3 rounded-xl border px-2.5 py-2 text-left transition disabled:opacity-50
+							class="flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:opacity-50
 								{selected
 								? 'border-primary bg-primary/20 ring-2 ring-primary/50'
 								: loadable
