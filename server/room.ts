@@ -68,6 +68,11 @@ export class Room {
 	private pausedFlow: 'check_win' | 'next_turn' | 'challenge' | null = null;
 	/** Correct player already used their post-reveal claim this turn */
 	private titleClaimDone = false;
+	/**
+	 * Bumped on every hard pause / resume so stale setTimeout callbacks
+	 * cannot advance the turn after titleConfirm opened.
+	 */
+	private flowGeneration = 0;
 	private turnIndexSeed = 0;
 
 	constructor(code?: string, settings?: Partial<GameSettings>) {
@@ -667,12 +672,15 @@ export class Room {
 		if (this.titleConfirm) return;
 		const prev = this.timers.get(key);
 		if (prev) clearTimeout(prev);
+		const gen = this.flowGeneration;
 		if (key === 'challenge') this.challengeTimerStartedAt = Date.now();
 		this.timers.set(
 			key,
 			setTimeout(() => {
 				this.timers.delete(key);
 				if (key === 'challenge') this.challengeTimerStartedAt = null;
+				// Stale callback from before a hard pause → drop
+				if (gen !== this.flowGeneration) return;
 				if (this.titleConfirm) return;
 				fn();
 			}, ms)
@@ -694,6 +702,8 @@ export class Room {
 		} else {
 			this.pausedChallengeMs = null;
 		}
+		// Invalidate every in-flight timer callback, then clear handles
+		this.flowGeneration += 1;
 		this.clearTimers();
 		this.turn.challengeEndsAt = null;
 	}
@@ -703,6 +713,8 @@ export class Room {
 		this.pausedFlow = null;
 		const remaining = this.pausedChallengeMs;
 		this.pausedChallengeMs = null;
+		// New generation for post-confirm timers only
+		this.flowGeneration += 1;
 
 		if (flow === 'check_win' && this.phase === 'RESOLVE') {
 			this.schedule('auto', 500, () => this.beginCheckWin());
@@ -711,6 +723,7 @@ export class Room {
 		if (flow === 'next_turn' && this.phase === 'CHECK_WIN') {
 			if (this.winnerId) {
 				this.schedule('auto', 400, () => {
+					if (this.titleConfirm) return;
 					this.phase = 'GAME_OVER';
 					this.broadcast();
 				});
@@ -742,6 +755,11 @@ export class Room {
 				`Gepauzeerd (${mode}): wacht tot titel/artiest van ${this.titleConfirm.playerName} is beslist`
 			);
 		}
+	}
+
+	/** Absolute gate: no phase advance while titleConfirm is open. */
+	private isHardPaused(): boolean {
+		return this.titleConfirm != null;
 	}
 
 	/** Player who placed correctly this turn (active kept or successful steal). */
@@ -781,6 +799,8 @@ export class Room {
 	}
 
 	private beginWaitingTurn(playerId: string | null) {
+		// Never wipe an open host/votes gate by advancing the turn
+		if (this.isHardPaused()) return;
 		if (!playerId || !this.turnOrder.includes(playerId)) {
 			playerId = this.turnOrder[0] ?? null;
 		}
@@ -812,7 +832,7 @@ export class Room {
 
 	private beginHostPlaying() {
 		if (this.phase !== 'WAITING_TURN') return;
-		if (this.titleConfirm) return;
+		if (this.isHardPaused()) return;
 		const track = this.deck.pop() ?? null;
 		if (!track) {
 			const sorted = [...this.players].sort((a, b) => b.timeline.length - a.timeline.length);
@@ -835,7 +855,7 @@ export class Room {
 
 	private beginGuessing() {
 		if (this.phase !== 'HOST_PLAYING') return;
-		if (this.titleConfirm) return;
+		if (this.isHardPaused()) return;
 		this.phase = 'GUESSING';
 		this.broadcast();
 	}
@@ -857,7 +877,7 @@ export class Room {
 
 	private beginChallenge() {
 		if (this.phase !== 'GUESS_LOCKED') return;
-		if (this.titleConfirm) return;
+		if (this.isHardPaused()) return;
 		this.phase = 'CHALLENGE_WINDOW';
 
 		if (this.playMode === 'single') {
@@ -913,6 +933,7 @@ export class Room {
 
 	private advanceChallengeSeat() {
 		if (this.phase !== 'CHALLENGE_WINDOW') return;
+		if (this.isHardPaused()) return;
 		this.clearTimers();
 		if (!this.challengeSeatId) {
 			this.beginReveal();
@@ -992,7 +1013,7 @@ export class Room {
 
 	private beginReveal() {
 		if (this.phase !== 'CHALLENGE_WINDOW' && this.phase !== 'GUESS_LOCKED') return;
-		if (this.titleConfirm) return;
+		if (this.isHardPaused()) return;
 		this.phase = 'REVEAL';
 		this.challengeSeatId = null;
 		this.challengeQueue = [];
@@ -1013,6 +1034,7 @@ export class Room {
 
 	private beginResolve() {
 		if (this.phase !== 'REVEAL') return;
+		if (this.isHardPaused()) return;
 		const active = this.players.find((p) => p.id === this.turn.activePlayerId);
 		const track = this.turn.track;
 		if (!active || !track || this.turn.lockedSlot == null) {
@@ -1040,12 +1062,14 @@ export class Room {
 
 	private beginCheckWin() {
 		if (this.phase !== 'RESOLVE') return;
+		if (this.isHardPaused()) return;
 		this.phase = 'CHECK_WIN';
 		const winner = checkWinner(this.players, this.settings.winAt);
 		this.broadcast();
 		if (winner) {
 			this.winnerId = winner;
 			this.schedule('auto', 1200, () => {
+				if (this.isHardPaused()) return;
 				this.phase = 'GAME_OVER';
 				this.broadcast();
 			});
