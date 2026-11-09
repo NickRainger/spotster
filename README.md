@@ -34,7 +34,15 @@ Open [http://localhost:5173](http://localhost:5173).
 
 ## Spotify setup
 
-Copy `.env.example` → `.env` and set `SPOTIFY_CLIENT_ID` (+ redirect URI in the Spotify Dashboard). See status doc for details. Without env, mock-deck keeps working.
+Copy `.env.example` → `.env` and set `SPOTIFY_CLIENT_ID` (+ redirect URI in the Spotify Dashboard). Without env, mock-deck keeps working.
+
+## Deploy (publiek)
+
+**Vercel alleen kan geen game-WebSockets hosten.** Zie de volledige guide in de Project store:
+
+`docs/spotster-vercel-deploy.md` (ook gekopieerd naar Desktop/Documents op de agent-VM).
+
+Kort: Railway/Fly met `npm run build && npm start` (UI+`/ws`), of Vercel (`npm run build:vercel`) + externe WS (`npm run start:ws`) + `PUBLIC_WS_URL`.
 
 ## Scripts
 

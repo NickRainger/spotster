@@ -20,6 +20,21 @@ export interface GameClientState {
 }
 
 function wsUrl(): string {
+	const fromEnv = (import.meta.env.PUBLIC_WS_URL as string | undefined)?.trim();
+	if (fromEnv) {
+		// Accept wss://host, https://host, or https://host/ws
+		if (fromEnv.startsWith('ws://') || fromEnv.startsWith('wss://')) {
+			return fromEnv.endsWith('/ws') ? fromEnv : `${fromEnv.replace(/\/$/, '')}/ws`;
+		}
+		if (fromEnv.startsWith('http://') || fromEnv.startsWith('https://')) {
+			const u = new URL(fromEnv);
+			u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+			u.pathname = '/ws';
+			u.search = '';
+			u.hash = '';
+			return u.toString().replace(/\/$/, '');
+		}
+	}
 	if (typeof window === 'undefined') return 'ws://localhost:5173/ws';
 	const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 	return `${proto}//${window.location.host}/ws`;

@@ -9,7 +9,10 @@
 	},
 	"scripts": {
 		"dev": "vite dev --host",
-		"build": "vite build",
+		"build": "DEPLOY_TARGET=node vite build",
+		"build:vercel": "DEPLOY_TARGET=vercel vite build",
+		"start": "node --import tsx server/standalone.mjs",
+		"start:ws": "node --import tsx server/ws-only.mjs",
 		"preview": "vite preview --host",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -19,6 +22,7 @@
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^6.0.0",
+		"@sveltejs/adapter-vercel": "^7.0.2",
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@tailwindcss/vite": "^4.3.0",

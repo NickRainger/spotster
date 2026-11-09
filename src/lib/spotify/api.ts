@@ -1,5 +1,6 @@
 import { getClientId, getClientSecret, getRedirectUri } from './config';
-import { deleteTokens, getTokens, isExpired, putTokens, type SpotifyTokens } from './token-store';
+import type { SpotifyTokens } from './token-store';
+import { isExpired } from './token-store';
 
 const AUTH = 'https://accounts.spotify.com';
 const API = 'https://api.spotify.com/v1';
@@ -63,7 +64,7 @@ export async function exchangeCode(opts: {
 	};
 }
 
-async function refresh(tokens: SpotifyTokens): Promise<SpotifyTokens> {
+export async function refreshTokens(tokens: SpotifyTokens): Promise<SpotifyTokens> {
 	const body = new URLSearchParams({
 		grant_type: 'refresh_token',
 		refresh_token: tokens.refreshToken,
@@ -92,27 +93,17 @@ async function refresh(tokens: SpotifyTokens): Promise<SpotifyTokens> {
 	};
 }
 
-export async function getValidAccessToken(sessionId: string): Promise<string | null> {
-	let tokens = getTokens(sessionId);
-	if (!tokens) return null;
-	if (isExpired(tokens)) {
-		try {
-			tokens = await refresh(tokens);
-			putTokens(sessionId, tokens);
-		} catch {
-			deleteTokens(sessionId);
-			return null;
-		}
-	}
-	return tokens.accessToken;
+/** Ensure access token is fresh; returns updated tokens if refreshed. */
+export async function ensureFreshTokens(
+	tokens: SpotifyTokens
+): Promise<{ tokens: SpotifyTokens; refreshed: boolean }> {
+	if (!isExpired(tokens)) return { tokens, refreshed: false };
+	const next = await refreshTokens(tokens);
+	return { tokens: next, refreshed: true };
 }
 
-export async function getSessionSummary(sessionId: string) {
-	const token = await getValidAccessToken(sessionId);
-	const tokens = getTokens(sessionId);
-	if (!token || !tokens) {
-		return { connected: false as const, configured: Boolean(getClientId()) };
-	}
+export function sessionSummaryFromTokens(tokens: SpotifyTokens | null, configured: boolean) {
+	if (!tokens) return { connected: false as const, configured };
 	return {
 		connected: true as const,
 		configured: true,

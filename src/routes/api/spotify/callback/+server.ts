@@ -1,8 +1,8 @@
 import { redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { exchangeCode } from '#lib/spotify/api';
-import { cookieOpts, newSessionId, PKCE_COOKIE, SPOTIFY_SESSION_COOKIE } from '#lib/spotify/session-cookie';
-import { putTokens } from '#lib/spotify/token-store';
+import { PKCE_COOKIE } from '#lib/spotify/session-cookie';
+import { writeSpotifyCookie } from '#lib/spotify/token-cookie';
 
 export const GET: RequestHandler = async ({ url, cookies }) => {
 	const code = url.searchParams.get('code');
@@ -32,9 +32,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 			verifier: pkce.verifier,
 			origin: url.origin
 		});
-		const sid = newSessionId();
-		putTokens(sid, tokens);
-		cookies.set(SPOTIFY_SESSION_COOKIE, sid, cookieOpts());
+		writeSpotifyCookie(cookies, tokens);
 		redirect(302, `${pkce.returnTo || '/'}?spotify=connected`);
 	} catch (e) {
 		const reason = e instanceof Error ? e.message : 'exchange_failed';
