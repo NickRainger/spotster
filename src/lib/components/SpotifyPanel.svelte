@@ -53,6 +53,12 @@
 	let loadedTracks = $state<Track[]>([]);
 	let showOverrides = $state(false);
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+	let selectedPlaylistId = $state<string | null>(null);
+
+	const activePlaylistId = $derived(spotify.playlistId || selectedPlaylistId);
+	const activePlaylistName = $derived(
+		spotify.source === 'spotify' ? spotify.playlistName : null
+	);
 
 	const filteredPlaylists = $derived.by(() => {
 		const q = playlistQuery.trim().toLowerCase();
@@ -144,6 +150,7 @@
 				);
 			}
 			loadedTracks = tracks;
+			selectedPlaylistId = id;
 			yearEdits = Object.fromEntries(tracks.map((t) => [t.id, String(t.year)]));
 			gameClient.send({
 				type: 'set_deck',
@@ -249,6 +256,7 @@
 	function resetToMock() {
 		gameClient.send({ type: 'set_deck', tracks: [], source: 'mock' });
 		loadedTracks = [];
+		selectedPlaylistId = null;
 	}
 
 	$effect(() => {
@@ -344,16 +352,34 @@
 			{#if loading && !playlists.length && !playlistHits.length}
 				<span class="loading loading-spinner loading-sm text-primary"></span>
 			{/if}
+			{#if activePlaylistName && spotify.source === 'spotify'}
+				<div
+					class="mb-3 flex items-center gap-3 rounded-2xl border-2 border-primary bg-primary/15 px-3 py-2.5"
+					role="status"
+				>
+					<span class="badge badge-primary badge-sm shrink-0">Geselecteerd</span>
+					<span class="min-w-0 truncate font-semibold text-primary-content/95"
+						>{activePlaylistName}</span
+					>
+					<span class="shrink-0 text-xs text-white/50"
+						>{deckRemaining || loadedTracks.length || '—'} tracks</span
+					>
+				</div>
+			{/if}
 			<ul class="max-h-64 space-y-1.5 overflow-y-auto">
 				{#each playlistHits.length ? playlistHits : filteredPlaylists as p (p.id + p.name)}
 					{@const loadable = p.id === 'liked' || p.canLoadTracks !== false}
+					{@const selected = activePlaylistId === p.id && spotify.source === 'spotify'}
 					<li>
 						<button
 							type="button"
-							class="flex w-full items-center gap-3 rounded-xl border px-2.5 py-2 text-left disabled:opacity-50
-								{loadable
-								? 'border-white/10 bg-white/5 hover:border-primary/40'
-								: 'border-white/5 bg-white/[0.03] opacity-70'}"
+							aria-pressed={selected}
+							class="flex w-full items-center gap-3 rounded-xl border px-2.5 py-2 text-left transition disabled:opacity-50
+								{selected
+								? 'border-primary bg-primary/20 ring-2 ring-primary/50'
+								: loadable
+									? 'border-white/10 bg-white/5 hover:border-primary/40'
+									: 'border-white/5 bg-white/[0.03] opacity-70'}"
 							disabled={disabled || loading}
 							onclick={() => selectPlaylist(p.id, p.name, loadable)}
 						>
@@ -361,18 +387,26 @@
 								<img
 									src={p.image}
 									alt=""
-									class="h-12 w-12 shrink-0 rounded-lg object-cover"
+									class="h-12 w-12 shrink-0 rounded-lg object-cover {selected
+										? 'ring-2 ring-primary'
+										: ''}"
 									loading="lazy"
 								/>
 							{:else}
 								<div
-									class="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-secondary/20 text-xs font-bold text-secondary"
+									class="grid h-12 w-12 shrink-0 place-items-center rounded-lg text-xs font-bold
+										{selected ? 'bg-primary text-primary-content' : 'bg-secondary/20 text-secondary'}"
 								>
 									{p.id === 'liked' ? '♥' : p.name.slice(0, 1)}
 								</div>
 							{/if}
 							<span class="min-w-0 flex-1">
-								<span class="block truncate font-medium">{p.name}</span>
+								<span class="flex items-center gap-2">
+									<span class="truncate font-medium">{p.name}</span>
+									{#if selected}
+										<span class="badge badge-primary badge-xs shrink-0">actief</span>
+									{/if}
+								</span>
 								<span class="block truncate text-xs text-white/40">
 									{p.owner ? `${p.owner} · ` : ''}{p.tracksTotal || '—'} tracks
 									{#if !loadable}
@@ -380,6 +414,9 @@
 									{/if}
 								</span>
 							</span>
+							{#if selected}
+								<span class="shrink-0 text-primary" aria-hidden="true">✓</span>
+							{/if}
 						</button>
 					</li>
 				{:else}
