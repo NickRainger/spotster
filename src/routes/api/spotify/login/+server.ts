@@ -19,11 +19,13 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	const state = randomString(24);
 	const returnTo = url.searchParams.get('returnTo') || '/';
 
-	cookies.set(
-		PKCE_COOKIE,
-		JSON.stringify({ verifier, state, returnTo }),
-		cookieOpts(600)
-	);
+	const secure =
+		typeof process !== 'undefined' &&
+		(process.env.NODE_ENV === 'production' || process.env.VERCEL === '1');
+	cookies.set(PKCE_COOKIE, JSON.stringify({ verifier, state, returnTo }), {
+		...cookieOpts(600),
+		secure
+	});
 
 	const origin = url.origin;
 	const params = new URLSearchParams({
@@ -36,5 +38,8 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		code_challenge: challenge
 	});
 
-	redirect(302, `https://accounts.spotify.com/authorize?${params}`);
+	// SvelteKit 3: externe redirect vereist { external: true }, anders 500
+	throw redirect(302, `https://accounts.spotify.com/authorize?${params}`, {
+		external: true
+	});
 };

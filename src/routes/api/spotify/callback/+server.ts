@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { isRedirect, redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { exchangeCode } from '#lib/spotify/api';
 import { PKCE_COOKIE } from '#lib/spotify/session-cookie';
@@ -20,10 +20,13 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	}
 
 	if (err) {
-		redirect(302, `${pkce?.returnTo || '/'}?spotify=error&reason=${encodeURIComponent(err)}`);
+		throw redirect(
+			302,
+			`${pkce?.returnTo || '/'}?spotify=error&reason=${encodeURIComponent(err)}`
+		);
 	}
 	if (!code || !pkce || !state || state !== pkce.state) {
-		redirect(302, `${pkce?.returnTo || '/'}?spotify=error&reason=invalid_state`);
+		throw redirect(302, `${pkce?.returnTo || '/'}?spotify=error&reason=invalid_state`);
 	}
 
 	try {
@@ -33,9 +36,13 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 			origin: url.origin
 		});
 		writeSpotifyCookie(cookies, tokens);
-		redirect(302, `${pkce.returnTo || '/'}?spotify=connected`);
+		throw redirect(302, `${pkce.returnTo || '/'}?spotify=connected`);
 	} catch (e) {
+		if (isRedirect(e)) throw e;
 		const reason = e instanceof Error ? e.message : 'exchange_failed';
-		redirect(302, `${pkce.returnTo || '/'}?spotify=error&reason=${encodeURIComponent(reason)}`);
+		throw redirect(
+			302,
+			`${pkce.returnTo || '/'}?spotify=error&reason=${encodeURIComponent(reason)}`
+		);
 	}
 };
