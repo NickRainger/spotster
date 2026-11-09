@@ -35,8 +35,7 @@
 			</p>
 			<p class="truncate text-xs text-white/45">
 				{#if track}
-					{track.artist}{#if !track.revealed && track.year}
-						{/if}
+					{track.artist}
 				{:else}
 					{phaseLabel}
 				{/if}
