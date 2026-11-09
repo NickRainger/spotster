@@ -259,6 +259,19 @@
 		selectedPlaylistId = null;
 	}
 
+	function deselectPlaylist() {
+		resetToMock();
+		error = null;
+	}
+
+	async function onPlaylistClick(id: string, name: string, loadable: boolean) {
+		if (activePlaylistId === id && spotify.source === 'spotify') {
+			deselectPlaylist();
+			return;
+		}
+		await selectPlaylist(id, name, loadable);
+	}
+
 	$effect(() => {
 		void refreshSession();
 	});
@@ -321,7 +334,8 @@
 		</div>
 		<p class="text-xs text-white/40">
 			Tracks laden alleen van <strong class="text-white/60">Liked Songs</strong> en playlists die jij
-			bezit (Spotify-API-regel).
+			bezit. Echte Spotify-audio start bij <strong class="text-white/60">Start spel</strong> (Premium =
+			volledig nummer, Free = preview). Klik eerst <strong class="text-white/60">Unlock audio</strong>.
 		</p>
 	{/if}
 
@@ -357,11 +371,15 @@
 					role="status"
 				>
 					<span class="badge badge-primary badge-sm shrink-0">Geselecteerd</span>
-					<span class="min-w-0 truncate font-semibold text-primary-content/95"
-						>{activePlaylistName}</span
-					>
+					<span class="min-w-0 flex-1 truncate font-semibold">{activePlaylistName}</span>
 					<span class="shrink-0 text-xs text-white/50"
 						>{deckRemaining || loadedTracks.length || '—'} tracks</span
+					>
+					<button
+						type="button"
+						class="btn btn-ghost btn-xs text-error"
+						disabled={disabled || loading}
+						onclick={deselectPlaylist}>Deselecteer</button
 					>
 				</div>
 			{/if}
@@ -380,7 +398,7 @@
 									? 'border-white/10 bg-white/5 hover:border-primary/40'
 									: 'border-white/5 bg-white/[0.03] opacity-70'}"
 							disabled={disabled || loading}
-							onclick={() => selectPlaylist(p.id, p.name, loadable)}
+							onclick={() => onPlaylistClick(p.id, p.name, loadable)}
 						>
 							{#if p.image}
 								<img
@@ -479,6 +497,11 @@
 			· {deckRemaining || (spotify.source === 'spotify' ? loadedTracks.length : '40')} tracks
 		</p>
 		<div class="mt-2 flex flex-wrap gap-2">
+			{#if spotify.source === 'spotify'}
+				<button class="btn btn-ghost btn-xs text-error" disabled={disabled} onclick={deselectPlaylist}
+					>Deselecteer playlist</button
+				>
+			{/if}
 			<button class="btn btn-ghost btn-xs" disabled={disabled} onclick={resetToMock}
 				>Gebruik mock-deck</button
 			>

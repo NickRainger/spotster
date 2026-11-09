@@ -32,6 +32,16 @@
 		'CHALLENGE_WINDOW'
 	];
 
+	const modeLabel = $derived(
+		status.mode === 'premium'
+			? 'Spotify Web Playback'
+			: status.mode === 'preview'
+				? 'Spotify preview (30s)'
+				: spotifySource === 'spotify'
+					? 'Spotify (fallback mock)'
+					: 'Mock-deck'
+	);
+
 	onMount(() => {
 		if (!isHost || !hostPlayer) return;
 		const unsub = hostPlayer.onStatus((s) => {
@@ -47,7 +57,6 @@
 	$effect(() => {
 		if (!isHost || !hostPlayer) return;
 		const shouldPlay = activePlayPhases.includes(phase) && !!track;
-		const key = shouldPlay && track ? `${track.id}:${phase === 'HOST_PLAYING' ? 'start' : 'cont'}` : null;
 
 		if (!shouldPlay) {
 			if (phase === 'REVEAL' || phase === 'RESOLVE' || phase === 'WAITING_TURN' || phase === 'lobby') {
@@ -66,11 +75,10 @@
 				playDurationSec: settings.playDurationSec,
 				playOffsetSec: settings.playOffsetSec,
 				mockFallback: () => {
-					/* visual mock via MockNowPlaying */
+					/* visual still shows track art */
 				}
 			});
 		}
-		void key;
 	});
 </script>
 
@@ -79,19 +87,15 @@
 		<MockNowPlaying
 			playing={status.playing || activePlayPhases.includes(phase)}
 			phaseLabel={PHASE_LABELS[phase]}
+			{track}
+			{modeLabel}
 		/>
 		<div class="flex flex-wrap items-center gap-2 px-1 text-xs text-white/50">
-			<span class="badge badge-sm badge-outline">
-				{status.mode === 'premium'
-					? 'Web Playback'
-					: status.mode === 'preview'
-						? 'Preview audio'
-						: status.mode === 'mock' || spotifySource === 'mock'
-							? 'Mock audio'
-							: 'Audio'}
-			</span>
-			{#if status.tier !== 'unknown'}
-				<span>{status.tier}</span>
+			<span class="badge badge-sm badge-outline">{modeLabel}</span>
+			{#if status.ready && status.mode === 'premium'}
+				<span class="text-secondary">device ready</span>
+			{:else if status.mode === 'none' || !status.ready}
+				<span class="text-warning">player init…</span>
 			{/if}
 			<span>{settings.playDurationSec}s · offset {settings.playOffsetSec}s</span>
 			{#if status.error}
@@ -100,10 +104,17 @@
 			<button class="btn btn-ghost btn-xs" onclick={() => hostPlayer?.unlockAudio()}>Unlock</button>
 			<button class="btn btn-ghost btn-xs" onclick={() => hostPlayer?.pause()}>Pause</button>
 		</div>
+		{#if spotifySource === 'spotify' && status.mode !== 'premium' && status.mode !== 'preview'}
+			<p class="px-1 text-xs text-white/40">
+				Tip: klik <strong>Unlock</strong> in de lobby of hier, daarna speelt Spotify bij Start.
+			</p>
+		{/if}
 	</div>
 {:else}
 	<MockNowPlaying
 		playing={activePlayPhases.includes(phase)}
 		phaseLabel={PHASE_LABELS[phase]}
+		{track}
+		modeLabel="Host speelt audio"
 	/>
 {/if}
