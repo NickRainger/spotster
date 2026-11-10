@@ -298,7 +298,7 @@
 			}
 			for (const { el } of movers) clearInlineMotion(el);
 			if (newEl) clearInlineMotion(newEl);
-			resetDeckStacking(newEl);
+			resetDeckStacking(newEl ?? null);
 			flipRunning = false;
 			if (newId) {
 				const idx = nextIds.indexOf(newId);
