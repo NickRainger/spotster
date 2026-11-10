@@ -16,6 +16,8 @@
 		challengePick?: boolean;
 		/** Animate this trackId as newly inserted */
 		insertTrackId?: string | null;
+		/** CSS selector for fly-from origin (Now Playing). */
+		flyFromSelector?: string;
 	}
 
 	let {
@@ -28,7 +30,8 @@
 		onSelectSlot,
 		dimYears: _dimYears = false,
 		challengePick = false,
-		insertTrackId = null
+		insertTrackId = null,
+		flyFromSelector = '[data-now-playing]'
 	}: Props = $props();
 
 	let scroller: HTMLDivElement | undefined = $state();
@@ -41,12 +44,18 @@
 	const lastYears = new Map<string, number>();
 	let yearPopIds = $state<Record<string, boolean>>({});
 
-	/** One-shot insert animation id (cleared after anim) */
-	let animInsertId = $state<string | null>(null);
+	/** Do NOT use $state for in-flight highlight — reactive class updates wipe inline FLIP transforms. */
 	let lastInsertProp: string | null | undefined = undefined;
 	let prevCardIds: string[] = [];
+	/** Layout offsets from previous paint (scroll-independent). Effect runs AFTER DOM update. */
+	let lastOffsets = new Map<string, { left: number; top: number; width: number; height: number }>();
+	let lastOrigin: DOMRect | null = null;
 	let primed = false;
 	let flipRunning = false;
+
+	const ROOM_MS = 1100;
+	const FLY_MS = 1200;
+	const FLY_DELAY_MS = 90;
 
 	function registerSlot(node: HTMLElement, slot: number) {
 		slotEls.set(slot, node);
@@ -105,13 +114,30 @@
 		canScrollRight = max > 2 && left < max - 2;
 	}
 
-	function scrollSlotIntoView(slot: number | null | undefined) {
+	function scrollSlotIntoView(slot: number | null | undefined, smooth = true) {
 		if (slot == null || !scroller) return;
-		const node = slotEls.get(slot);
+		const node = slotEls.get(slot) ?? cardEls.get(cards[slot]?.trackId ?? '');
 		if (!node) return;
 		const parent = scroller;
 		const left = node.offsetLeft - parent.clientWidth / 2 + node.clientWidth / 2;
-		parent.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+		parent.scrollTo({ left: Math.max(0, left), behavior: smooth ? 'smooth' : 'auto' });
+	}
+
+	function snapshotRects() {
+		const next = new Map<string, { left: number; top: number; width: number; height: number }>();
+		for (const [id, el] of cardEls) {
+			next.set(id, {
+				left: el.offsetLeft,
+				top: el.offsetTop,
+				width: el.offsetWidth,
+				height: el.offsetHeight
+			});
+		}
+		lastOffsets = next;
+		lastOrigin =
+			typeof document !== 'undefined'
+				? document.querySelector(flyFromSelector)?.getBoundingClientRect() ?? null
+				: null;
 	}
 
 	function syncYearPops(list: TimelineCard[]) {
@@ -133,62 +159,140 @@
 		}, 700);
 	}
 
+	function nextFrame() {
+		return new Promise<void>((r) => requestAnimationFrame(() => r()));
+	}
+
+	function clearInlineMotion(el: HTMLElement) {
+		el.style.transition = '';
+		el.style.transform = '';
+		el.style.opacity = '';
+		el.style.zIndex = '';
+		el.style.filter = '';
+	}
+
+	/**
+	 * Real FLIP insert (effect runs AFTER DOM update):
+	 * FIRST = lastOffsets from previous paint (offsetLeft — ignore scroll)
+	 * LAST  = current offsets after insert
+	 * Neighbors ease-in-out make room; new card flies from Now Playing.
+	 * Scroll-into-view only AFTER the animation so it cannot cancel FLIP.
+	 */
 	async function runFlipInsert(newId: string | null, nextIds: string[]) {
 		if (flipRunning) {
 			prevCardIds = nextIds;
+			queueMicrotask(() => snapshotRects());
 			return;
 		}
 
-		const first = new Map<string, number>();
-		for (const id of prevCardIds) {
-			const el = cardEls.get(id);
-			if (el) first.set(id, el.getBoundingClientRect().left);
-		}
+		const first = new Map(lastOffsets);
+		const origin = lastOrigin;
 
 		prevCardIds = nextIds;
 		await tick();
 		updateShadows();
 
-		if (newId) {
-			animInsertId = newId;
-			const idx = nextIds.indexOf(newId);
-			if (idx >= 0) scrollSlotIntoView(idx);
-			window.setTimeout(() => {
-				if (animInsertId === newId) animInsertId = null;
-			}, 950);
-		}
-
-		const movers: HTMLElement[] = [];
+		const movers: { el: HTMLElement; dx: number; dy: number }[] = [];
 		for (const id of nextIds) {
 			if (id === newId) continue;
 			const el = cardEls.get(id);
 			const from = first.get(id);
-			if (!el || from == null) continue;
-			const to = el.getBoundingClientRect().left;
-			const dx = from - to;
-			if (Math.abs(dx) < 1) continue;
-			el.style.transition = 'none';
-			el.style.transform = `translateX(${dx}px)`;
-			movers.push(el);
+			if (!el || !from) continue;
+			const dx = from.left - el.offsetLeft;
+			const dy = from.top - el.offsetTop;
+			if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+			movers.push({ el, dx, dy });
 		}
 
-		if (!movers.length && !newId) return;
+		const newEl = newId ? cardEls.get(newId) : null;
+		let fly: { dx: number; dy: number; scale: number } | null = null;
+		if (newEl) {
+			const to = newEl.getBoundingClientRect();
+			let dx = 0;
+			let dy = -72;
+			let scale = 0.65;
+			if (origin) {
+				dx = origin.left + origin.width / 2 - (to.left + to.width / 2);
+				dy = origin.top + origin.height / 2 - (to.top + to.height / 2);
+				scale = Math.min(1.15, Math.max(0.4, origin.width / Math.max(to.width, 1)));
+			}
+			fly = { dx, dy, scale };
+		}
+
+		if (!movers.length && !fly) {
+			snapshotRects();
+			if (newId) {
+				const idx = nextIds.indexOf(newId);
+				if (idx >= 0) scrollSlotIntoView(idx, true);
+			}
+			return;
+		}
 
 		flipRunning = true;
-		void scroller?.offsetWidth;
-		requestAnimationFrame(() => {
-			for (const el of movers) {
-				el.style.transition = 'transform 0.85s ease-in-out';
-				el.style.transform = 'translateX(0)';
-			}
-			window.setTimeout(() => {
-				for (const el of movers) {
-					el.style.transition = '';
-					el.style.transform = '';
+		const animations: Animation[] = [];
+
+		// WAAPI — survives Svelte class patches better than CSS transitions
+		for (const { el, dx, dy } of movers) {
+			el.style.zIndex = '5';
+			animations.push(
+				el.animate(
+					[
+						{ transform: `translate(${dx}px, ${dy}px)` },
+						{ transform: 'translate(0px, 0px)' }
+					],
+					{ duration: ROOM_MS, easing: 'ease-in-out', fill: 'both' }
+				)
+			);
+		}
+
+		if (newEl && fly) {
+			newEl.classList.add('card-insert-live');
+			newEl.style.zIndex = '40';
+			const flyAnim = newEl.animate(
+				[
+					{
+						transform: `translate(${fly.dx}px, ${fly.dy}px) scale(${fly.scale})`,
+						opacity: 0.2,
+						filter: 'brightness(1.35)'
+					},
+					{
+						transform: 'translate(0px, 0px) scale(1)',
+						opacity: 1,
+						filter: 'brightness(1)'
+					}
+				],
+				{
+					duration: FLY_MS,
+					delay: FLY_DELAY_MS,
+					easing: 'ease-in-out',
+					fill: 'both'
 				}
-				flipRunning = false;
-			}, 900);
-		});
+			);
+			animations.push(flyAnim);
+		}
+
+		const doneMs = Math.max(ROOM_MS, FLY_DELAY_MS + FLY_MS) + 80;
+		window.setTimeout(() => {
+			for (const a of animations) {
+				try {
+					a.finish();
+					a.cancel();
+				} catch {
+					/* ignore */
+				}
+			}
+			for (const { el } of movers) clearInlineMotion(el);
+			if (newEl) {
+				clearInlineMotion(newEl);
+				newEl.classList.remove('card-insert-live');
+			}
+			flipRunning = false;
+			if (newId) {
+				const idx = nextIds.indexOf(newId);
+				if (idx >= 0) scrollSlotIntoView(idx, true);
+			}
+			snapshotRects();
+		}, doneMs);
 	}
 
 	onMount(() => {
@@ -218,7 +322,10 @@
 			prevCardIds = ids;
 			lastInsertProp = insertProp;
 			for (const c of list) lastYears.set(c.trackId, c.year);
-			queueMicrotask(() => updateShadows());
+			queueMicrotask(() => {
+				updateShadows();
+				snapshotRects();
+			});
 			return;
 		}
 
@@ -237,8 +344,11 @@
 
 		if (orderChanged || newId) {
 			void runFlipInsert(newId, ids);
-		} else {
-			queueMicrotask(() => updateShadows());
+		} else if (!flipRunning) {
+			queueMicrotask(() => {
+				updateShadows();
+				snapshotRects();
+			});
 		}
 	});
 
@@ -306,12 +416,10 @@
 				{/if}
 			</button>
 
-			{@const isInsert = animInsertId === card.trackId}
 			{@const yearPop = !!yearPopIds[card.trackId]}
 			<div
 				use:registerCard={card.trackId}
-				class="timeline-card flex min-w-28 shrink-0 flex-col justify-between rounded-2xl border border-white/10 bg-base-200/80 px-3 py-2 shadow-lg backdrop-blur
-					{isInsert ? 'card-insert ring-2 ring-success/60' : ''}"
+				class="timeline-card flex min-w-28 shrink-0 flex-col justify-between rounded-2xl border border-white/10 bg-base-200/80 px-3 py-2 shadow-lg backdrop-blur"
 				data-track={card.trackId}
 			>
 				<p class="font-display text-2xl leading-none text-accent" class:year-pop={yearPop}>
@@ -324,7 +432,6 @@
 			</div>
 		{/each}
 
-		<!-- Trailing slot (after last card) -->
 		{#if true}
 			{@const endSlot = cards.length}
 			{@const endClaim = claimAt(endSlot)}
@@ -382,29 +489,14 @@
 	}
 
 	.timeline-card {
-		will-change: transform;
+		will-change: transform, opacity;
+		transform-origin: center center;
 	}
 
-	/* New card: ease-in-out into place — no flashy bounce */
-	.card-insert {
-		animation: card-ease-in 0.85s ease-in-out both;
-	}
-
-	@keyframes card-ease-in {
-		0% {
-			opacity: 0;
-			transform: scale(0.72);
-			filter: brightness(1.15);
-		}
-		45% {
-			opacity: 1;
-			filter: brightness(1.05);
-		}
-		100% {
-			opacity: 1;
-			transform: scale(1);
-			filter: brightness(1);
-		}
+	:global(.timeline-card.card-insert-live) {
+		box-shadow:
+			0 0 0 1px rgba(45, 212, 191, 0.35),
+			0 12px 28px rgba(0, 0, 0, 0.35);
 	}
 
 	/* Only when the year number itself changes */

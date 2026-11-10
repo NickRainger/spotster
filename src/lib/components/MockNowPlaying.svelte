@@ -13,6 +13,7 @@
 
 {#if compact}
 	<div
+		data-now-playing
 		class="flex min-w-0 items-center gap-2.5 rounded-xl border border-white/10 bg-base-200/70 px-2.5 py-2"
 	>
 		{#if track?.imageUrl}
@@ -48,6 +49,7 @@
 	</div>
 {:else}
 	<div
+		data-now-playing
 		class="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#1a1020] via-base-200 to-[#0b1220] p-5"
 	>
 		<div
