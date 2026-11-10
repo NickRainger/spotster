@@ -53,9 +53,10 @@
 	let primed = false;
 	let flipRunning = false;
 
-	const ROOM_MS = 1100;
-	const FLY_MS = 1200;
-	const FLY_DELAY_MS = 90;
+	/** Snappy but readable — was 1100/1200 (felt sluggish) */
+	const ROOM_MS = 480;
+	const FLY_MS = 520;
+	const FLY_DELAY_MS = 40;
 
 	function registerSlot(node: HTMLElement, slot: number) {
 		slotEls.set(slot, node);
@@ -164,11 +165,25 @@
 	}
 
 	function clearInlineMotion(el: HTMLElement) {
-		el.style.transition = '';
-		el.style.transform = '';
-		el.style.opacity = '';
-		el.style.zIndex = '';
-		el.style.filter = '';
+		el.style.removeProperty('transition');
+		el.style.removeProperty('transform');
+		el.style.removeProperty('opacity');
+		el.style.removeProperty('z-index');
+		el.style.removeProperty('filter');
+		el.style.removeProperty('will-change');
+	}
+
+	/** Restore normal deck stacking after FLIP (no leftover elevated layers). */
+	function resetDeckStacking(flyer: HTMLElement | null) {
+		for (const el of cardEls.values()) {
+			el.style.removeProperty('z-index');
+			el.style.removeProperty('will-change');
+			el.classList.remove('card-insert-live');
+		}
+		if (flyer) {
+			flyer.style.removeProperty('z-index');
+			flyer.classList.remove('card-insert-live');
+		}
 	}
 
 	/**
@@ -231,23 +246,24 @@
 		flipRunning = true;
 		const animations: Animation[] = [];
 
-		// WAAPI — survives Svelte class patches better than CSS transitions
+		// Neighbors keep base stacking (z-index: 0) — only the flyer rises
 		for (const { el, dx, dy } of movers) {
-			el.style.zIndex = '5';
+			el.style.willChange = 'transform';
 			animations.push(
 				el.animate(
 					[
 						{ transform: `translate(${dx}px, ${dy}px)` },
 						{ transform: 'translate(0px, 0px)' }
 					],
-					{ duration: ROOM_MS, easing: 'ease-in-out', fill: 'both' }
+					{ duration: ROOM_MS, easing: 'ease-in-out', fill: 'forwards' }
 				)
 			);
 		}
 
 		if (newEl && fly) {
 			newEl.classList.add('card-insert-live');
-			newEl.style.zIndex = '40';
+			newEl.style.zIndex = '50';
+			newEl.style.willChange = 'transform, opacity';
 			const flyAnim = newEl.animate(
 				[
 					{
@@ -265,7 +281,7 @@
 					duration: FLY_MS,
 					delay: FLY_DELAY_MS,
 					easing: 'ease-in-out',
-					fill: 'both'
+					fill: 'forwards'
 				}
 			);
 			animations.push(flyAnim);
@@ -275,17 +291,14 @@
 		window.setTimeout(() => {
 			for (const a of animations) {
 				try {
-					a.finish();
 					a.cancel();
 				} catch {
 					/* ignore */
 				}
 			}
 			for (const { el } of movers) clearInlineMotion(el);
-			if (newEl) {
-				clearInlineMotion(newEl);
-				newEl.classList.remove('card-insert-live');
-			}
+			if (newEl) clearInlineMotion(newEl);
+			resetDeckStacking(newEl);
 			flipRunning = false;
 			if (newId) {
 				const idx = nextIds.indexOf(newId);
@@ -488,15 +501,23 @@
 		min-height: 5.5rem;
 	}
 
+	.timeline-scroll {
+		position: relative;
+		isolation: isolate;
+	}
+
 	.timeline-card {
-		will-change: transform, opacity;
+		position: relative;
+		z-index: 0;
 		transform-origin: center center;
 	}
 
+	/* Only during flight — cleared after animation */
 	:global(.timeline-card.card-insert-live) {
+		z-index: 50 !important;
 		box-shadow:
 			0 0 0 1px rgba(45, 212, 191, 0.35),
-			0 12px 28px rgba(0, 0, 0, 0.35);
+			0 16px 32px rgba(0, 0, 0, 0.45);
 	}
 
 	/* Only when the year number itself changes */
@@ -523,7 +544,8 @@
 		top: 0;
 		bottom: 0;
 		width: 2.75rem;
-		z-index: 2;
+		/* Above normal cards (0), below flying insert (50) */
+		z-index: 10;
 		opacity: 0;
 		transition: opacity 0.2s ease;
 	}
