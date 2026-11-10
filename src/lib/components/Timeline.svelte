@@ -49,14 +49,12 @@
 	let prevCardIds: string[] = [];
 	/** Layout offsets from previous paint (scroll-independent). Effect runs AFTER DOM update. */
 	let lastOffsets = new Map<string, { left: number; top: number; width: number; height: number }>();
-	let lastOrigin: DOMRect | null = null;
 	let primed = false;
 	let flipRunning = false;
 
-	/** Snappy but readable — was 1100/1200 (felt sluggish) */
-	const ROOM_MS = 480;
-	const FLY_MS = 520;
-	const FLY_DELAY_MS = 40;
+	/** Hard-snappy ease-in-out (Nick: 250–350ms, not 0.5s+) */
+	const ROOM_MS = 280;
+	const FLY_MS = 300;
 
 	function registerSlot(node: HTMLElement, slot: number) {
 		slotEls.set(slot, node);
@@ -135,10 +133,11 @@
 			});
 		}
 		lastOffsets = next;
-		lastOrigin =
-			typeof document !== 'undefined'
-				? document.querySelector(flyFromSelector)?.getBoundingClientRect() ?? null
-				: null;
+	}
+
+	function measureNowPlaying(): DOMRect | null {
+		if (typeof document === 'undefined') return null;
+		return document.querySelector(flyFromSelector)?.getBoundingClientRect() ?? null;
 	}
 
 	function syncYearPops(list: TimelineCard[]) {
@@ -187,11 +186,10 @@
 	}
 
 	/**
-	 * Real FLIP insert (effect runs AFTER DOM update):
-	 * FIRST = lastOffsets from previous paint (offsetLeft — ignore scroll)
-	 * LAST  = current offsets after insert
-	 * Neighbors ease-in-out make room; new card flies from Now Playing.
-	 * Scroll-into-view only AFTER the animation so it cannot cancel FLIP.
+	 * FLIP insert:
+	 * - Neighbors ease from old offset → new offset (make room)
+	 * - New card: fixed-position clone flies from LIVE Now Playing rect → slot
+	 *   (in-timeline transform cannot escape overflow clipping → looked "from behind")
 	 */
 	async function runFlipInsert(newId: string | null, nextIds: string[]) {
 		if (flipRunning) {
@@ -201,8 +199,6 @@
 		}
 
 		const first = new Map(lastOffsets);
-		const origin = lastOrigin;
-
 		prevCardIds = nextIds;
 		await tick();
 		updateShadows();
@@ -220,21 +216,11 @@
 		}
 
 		const newEl = newId ? cardEls.get(newId) : null;
-		let fly: { dx: number; dy: number; scale: number } | null = null;
-		if (newEl) {
-			const to = newEl.getBoundingClientRect();
-			let dx = 0;
-			let dy = -72;
-			let scale = 0.65;
-			if (origin) {
-				dx = origin.left + origin.width / 2 - (to.left + to.width / 2);
-				dy = origin.top + origin.height / 2 - (to.top + to.height / 2);
-				scale = Math.min(1.15, Math.max(0.4, origin.width / Math.max(to.width, 1)));
-			}
-			fly = { dx, dy, scale };
-		}
+		// Fresh Now Playing rect at flight time — not a stale snapshot
+		const origin = measureNowPlaying();
+		const dest = newEl?.getBoundingClientRect() ?? null;
 
-		if (!movers.length && !fly) {
+		if (!movers.length && !(newEl && origin && dest)) {
 			snapshotRects();
 			if (newId) {
 				const idx = nextIds.indexOf(newId);
@@ -245,8 +231,8 @@
 
 		flipRunning = true;
 		const animations: Animation[] = [];
+		let flyer: HTMLElement | null = null;
 
-		// Neighbors keep base stacking (z-index: 0) — only the flyer rises
 		for (const { el, dx, dy } of movers) {
 			el.style.willChange = 'transform';
 			animations.push(
@@ -260,34 +246,50 @@
 			);
 		}
 
-		if (newEl && fly) {
-			newEl.classList.add('card-insert-live');
-			newEl.style.zIndex = '50';
-			newEl.style.willChange = 'transform, opacity';
-			const flyAnim = newEl.animate(
-				[
-					{
-						transform: `translate(${fly.dx}px, ${fly.dy}px) scale(${fly.scale})`,
-						opacity: 0.2,
-						filter: 'brightness(1.35)'
-					},
-					{
-						transform: 'translate(0px, 0px) scale(1)',
-						opacity: 1,
-						filter: 'brightness(1)'
-					}
-				],
-				{
-					duration: FLY_MS,
-					delay: FLY_DELAY_MS,
-					easing: 'ease-in-out',
-					fill: 'forwards'
-				}
+		if (newEl && origin && dest) {
+			// Hide in-place card until clone lands (avoids double image / behind-clip)
+			newEl.style.opacity = '0';
+			newEl.style.pointerEvents = 'none';
+
+			flyer = document.createElement('div');
+			flyer.className = 'spotster-fly-card';
+			flyer.setAttribute('aria-hidden', 'true');
+			flyer.innerHTML = newEl.innerHTML;
+			const fromW = Math.max(origin.height * 1.6, Math.min(origin.width * 0.42, dest.width));
+			const fromH = Math.max(origin.height, dest.height * 0.85);
+			Object.assign(flyer.style, {
+				position: 'fixed',
+				left: `${origin.left + origin.width / 2 - fromW / 2}px`,
+				top: `${origin.top + origin.height / 2 - fromH / 2}px`,
+				width: `${fromW}px`,
+				height: `${fromH}px`,
+				zIndex: '9999',
+				margin: '0',
+				pointerEvents: 'none',
+				boxSizing: 'border-box'
+			});
+			document.body.appendChild(flyer);
+
+			const dx = dest.left - (origin.left + origin.width / 2 - fromW / 2);
+			const dy = dest.top - (origin.top + origin.height / 2 - fromH / 2);
+			const sx = dest.width / fromW;
+			const sy = dest.height / fromH;
+
+			animations.push(
+				flyer.animate(
+					[
+						{ transform: 'translate(0px, 0px) scale(1)', opacity: 1 },
+						{
+							transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
+							opacity: 1
+						}
+					],
+					{ duration: FLY_MS, easing: 'ease-in-out', fill: 'forwards' }
+				)
 			);
-			animations.push(flyAnim);
 		}
 
-		const doneMs = Math.max(ROOM_MS, FLY_DELAY_MS + FLY_MS) + 80;
+		const doneMs = Math.max(ROOM_MS, FLY_MS) + 40;
 		window.setTimeout(() => {
 			for (const a of animations) {
 				try {
@@ -297,7 +299,12 @@
 				}
 			}
 			for (const { el } of movers) clearInlineMotion(el);
-			if (newEl) clearInlineMotion(newEl);
+			if (flyer?.parentNode) flyer.parentNode.removeChild(flyer);
+			if (newEl) {
+				newEl.style.removeProperty('opacity');
+				newEl.style.removeProperty('pointer-events');
+				clearInlineMotion(newEl);
+			}
 			resetDeckStacking(newEl ?? null);
 			flipRunning = false;
 			if (newId) {
@@ -515,9 +522,24 @@
 	/* Only during flight — cleared after animation */
 	:global(.timeline-card.card-insert-live) {
 		z-index: 50 !important;
+	}
+
+	/* Portal flyer — escapes timeline overflow so flight starts on Now Playing */
+	:global(.spotster-fly-card) {
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		overflow: hidden;
+		border-radius: 1rem;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(30, 35, 48, 0.95);
+		padding: 0.5rem 0.75rem;
 		box-shadow:
-			0 0 0 1px rgba(45, 212, 191, 0.35),
-			0 16px 32px rgba(0, 0, 0, 0.45);
+			0 0 0 1px rgba(45, 212, 191, 0.45),
+			0 18px 40px rgba(0, 0, 0, 0.55);
+		color: #fff;
+		font: inherit;
+		backdrop-filter: blur(8px);
 	}
 
 	/* Only when the year number itself changes */

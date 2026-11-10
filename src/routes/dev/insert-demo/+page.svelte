@@ -32,7 +32,7 @@
 		insertTrackId = id;
 		window.setTimeout(() => {
 			if (insertTrackId === id) insertTrackId = null;
-		}, 1600);
+		}, 450);
 	}
 </script>
 
